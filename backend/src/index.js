@@ -1,70 +1,77 @@
 require('dotenv').config();
 const express = require('express');
-const { ApolloServer } = require('apollo-server-express');
 const mongoose = require('mongoose');
-const cookieParser = require('cookie-parser');
 const cors = require('cors');
+const { ApolloServer } = require('apollo-server-express');
 const typeDefs = require('./schema/types');
 const resolvers = require('./schema/resolvers');
+const { startDailyUpdates } = require('./services/gameService');
 const { authMiddleware } = require('./utils/auth');
-
-// Import routes
 const authRoutes = require('./routes/auth');
-const slotRoutes = require('./routes/slots');
+const apiRoutes = require('./routes/api');
+const webhookRoutes = require('./routes/webhooks');
+const { depositWatcher } = require('./services/depositWatcher');
+const { merchantDepositWatcher } = require('./services/merchantDepositWatcher');
 
 const app = express();
 
 // Middleware
-app.use(cookieParser());
+app.use(express.json());
 app.use(cors({
-    origin: process.env.FRONTEND_URL || 'http://localhost:3000',
-    credentials: true,
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization']
+  origin: 'http://localhost:3000', // Replace with your frontend URL
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
 }));
 
 // Routes
 app.use('/api/auth', authRoutes);
-app.use('/api/slots', slotRoutes);
-
-// Connect to MongoDB
-mongoose.connect(process.env.MONGODB_URI)
-    .then(() => console.log('MongoDB Connected'))
-    .catch(err => console.error('MongoDB connection error:', err));
+app.use('/api', apiRoutes);
+app.use('/webhooks', webhookRoutes);
 
 // Create Apollo Server
 const server = new ApolloServer({
-    typeDefs,
-    resolvers,
-    context: async ({ req, res }) => {
-        const auth = await authMiddleware(req);
-        return {
-            ...auth,
-            res
-        };
-    },
-    formatError: (error) => {
-        console.error('GraphQL Error:', error);
-        return error;
-    }
+  typeDefs,
+  resolvers,
+  context: async ({ req }) => {
+    const auth = await authMiddleware(req);
+    return auth;
+  }
 });
 
 async function startServer() {
+  try {
+    // Connect to MongoDB
+    await mongoose.connect(process.env.MONGODB_URI);
+    console.log('Connected to MongoDB');
+    
+    // Start the game update service
+    startDailyUpdates();
+    console.log('Game update service started');
+
+    // Start Apollo Server
     await server.start();
     
-    // Apply Apollo middleware to Express
+    // Apply Apollo middleware
     server.applyMiddleware({ 
-        app,
-        path: '/graphql',
-        cors: false // We're handling CORS with Express
+      app,
+      cors: false // Let Express CORS handle it
     });
 
-    const PORT = process.env.PORT || 5000;
-    app.listen(PORT, () => {
-        console.log(`🚀 Server ready at http://localhost:${PORT}${server.graphqlPath}`);
+    // Start Deposit Watchers
+    await depositWatcher.start();
+    await merchantDepositWatcher.start();
+
+    // Start Express Server
+    const port = process.env.PORT || 5000;
+    app.listen(port, () => {
+      console.log(`Server is running on port ${port}`);
+      console.log(`GraphQL server ready at http://localhost:${port}${server.graphqlPath}`);
     });
+  } catch (error) {
+    console.error('Failed to start server:', error);
+    process.exit(1);
+  }
 }
 
-startServer().catch(error => {
-    console.error('Failed to start server:', error);
-}); 
+startServer().catch(console.error); 

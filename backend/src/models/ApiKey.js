@@ -9,7 +9,6 @@ const apiKeySchema = new mongoose.Schema({
     },
     key: {
         type: String,
-        required: true,
         unique: true
     },
     user: {
@@ -40,14 +39,9 @@ const apiKeySchema = new mongoose.Schema({
 
 // Generate API key before saving
 apiKeySchema.pre('save', function(next) {
-    if (!this.isModified('key')) {
-        next();
-        return;
+    if (this.isNew) {
+        this.key = crypto.randomBytes(32).toString('hex');
     }
-
-    // Generate a random API key
-    const buffer = crypto.randomBytes(32);
-    this.key = buffer.toString('hex');
     next();
 });
 

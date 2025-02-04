@@ -87,6 +87,8 @@ export default function AccountPage() {
   const [showBalanceModal, setShowBalanceModal] = useState(false)
   const [selectedAgent, setSelectedAgent] = useState<any>(null)
   const [amount, setAmount] = useState('')
+  const [searchTerm, setSearchTerm] = useState('')
+  const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'suspended'>('all')
   const [formData, setFormData] = useState({
     username: '',
     email: '',
@@ -104,6 +106,18 @@ export default function AccountPage() {
   const [updateAgentBalance] = useMutation(UPDATE_AGENT_BALANCE)
   const [toggleAgentStatus] = useMutation(TOGGLE_AGENT_STATUS)
   const { data: balanceData } = useQuery(GET_BALANCE)
+
+  // Filter agents based on search term and status
+  const filteredAgents = data?.getAgents.filter((agent: any) => {
+    const matchesSearch = 
+      agent.username.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      agent.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      agent.id.toLowerCase().includes(searchTerm.toLowerCase())
+
+    const matchesStatus = statusFilter === 'all' ? true : agent.status === statusFilter
+
+    return matchesSearch && matchesStatus
+  })
 
   const handleCreateAgent = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -173,8 +187,8 @@ export default function AccountPage() {
       </div>
 
       {/* Balance Overview Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-        <div className="bg-white rounded-lg border border-gray-200 p-4">
+      <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 mb-6">
+        <div className="bg-white rounded-lg border border-gray-200 p-3 sm:p-4">
           <div className="flex items-center justify-between mb-2">
             <div className="h-8 w-8 rounded-full bg-blue-50 flex items-center justify-center">
               <Users className="h-4 w-4 text-blue-500" />
@@ -182,12 +196,12 @@ export default function AccountPage() {
             <ArrowUpDown className="h-4 w-4 text-gray-400" />
           </div>
           <div className="space-y-0.5">
-            <p className="text-sm text-gray-600">Total Agents</p>
-            <p className="text-xl font-semibold text-gray-900">{data?.getAgents.length || 0}</p>
+            <p className="text-xs sm:text-sm text-gray-600">Total Agents</p>
+            <p className="text-lg sm:text-xl font-semibold text-gray-900">{data?.getAgents.length || 0}</p>
           </div>
         </div>
 
-        <div className="bg-white rounded-lg border border-gray-200 p-4">
+        <div className="bg-white rounded-lg border border-gray-200 p-3 sm:p-4">
           <div className="flex items-center justify-between mb-2">
             <div className="h-8 w-8 rounded-full bg-green-50 flex items-center justify-center">
               <Wallet className="h-4 w-4 text-green-500" />
@@ -195,14 +209,14 @@ export default function AccountPage() {
             <ArrowUp className="h-4 w-4 text-green-500" />
           </div>
           <div className="space-y-0.5">
-            <p className="text-sm text-gray-600">Total Balance</p>
-            <p className="text-xl font-semibold text-gray-900">
+            <p className="text-xs sm:text-sm text-gray-600">Total Balance</p>
+            <p className="text-lg sm:text-xl font-semibold text-gray-900">
               ${data?.getAgents.reduce((sum: number, agent: any) => sum + agent.balance, 0).toFixed(2) || '0.00'}
             </p>
           </div>
         </div>
 
-        <div className="bg-white rounded-lg border border-gray-200 p-4">
+        <div className="bg-white rounded-lg border border-gray-200 p-3 sm:p-4">
           <div className="flex items-center justify-between mb-2">
             <div className="h-8 w-8 rounded-full bg-purple-50 flex items-center justify-center">
               <Shield className="h-4 w-4 text-purple-500" />
@@ -210,14 +224,14 @@ export default function AccountPage() {
             <Power className="h-4 w-4 text-green-500" />
           </div>
           <div className="space-y-0.5">
-            <p className="text-sm text-gray-600">Active Agents</p>
-            <p className="text-xl font-semibold text-gray-900">
+            <p className="text-xs sm:text-sm text-gray-600">Active Agents</p>
+            <p className="text-lg sm:text-xl font-semibold text-gray-900">
               {data?.getAgents.filter((agent: any) => agent.status === 'active').length || 0}
             </p>
           </div>
         </div>
 
-        <div className="bg-white rounded-lg border border-gray-200 p-4">
+        <div className="bg-white rounded-lg border border-gray-200 p-3 sm:p-4">
           <div className="flex items-center justify-between mb-2">
             <div className="h-8 w-8 rounded-full bg-orange-50 flex items-center justify-center">
               <Percent className="h-4 w-4 text-orange-500" />
@@ -225,8 +239,8 @@ export default function AccountPage() {
             <RefreshCw className="h-4 w-4 text-gray-400" />
           </div>
           <div className="space-y-0.5">
-            <p className="text-sm text-gray-600">Avg. GGR %</p>
-            <p className="text-xl font-semibold text-gray-900">
+            <p className="text-xs sm:text-sm text-gray-600">Avg. GGR %</p>
+            <p className="text-lg sm:text-xl font-semibold text-gray-900">
               {data?.getAgents.length 
                 ? (data.getAgents.reduce((sum: number, agent: any) => sum + agent.ggrPercentage, 0) / data.getAgents.length).toFixed(1)
                 : '0.0'}%
@@ -236,24 +250,34 @@ export default function AccountPage() {
       </div>
 
       {/* Actions */}
-      <div className="mb-6 flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <div className="relative">
+      <div className="mb-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 sm:gap-0">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 w-full sm:w-auto">
+          <div className="relative w-full sm:w-64">
             <input
               type="text"
               placeholder="Search agents..."
-              className="w-64 h-9 pl-9 pr-4 text-sm border border-gray-200 rounded-lg focus:outline-none focus:border-[#18B69B] focus:ring-2 focus:ring-[#18B69B]/20"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full h-9 pl-9 pr-4 text-sm border border-gray-200 rounded-lg focus:outline-none focus:border-[#18B69B] focus:ring-2 focus:ring-[#18B69B]/20"
             />
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
           </div>
-          <button className="h-9 px-3 text-sm text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 flex items-center gap-2">
-            <Filter className="h-4 w-4" />
-            <span>Filter</span>
-          </button>
+          <div className="relative w-full sm:w-auto">
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value as 'all' | 'active' | 'suspended')}
+              className="h-9 pl-9 pr-4 text-sm border border-gray-200 rounded-lg focus:outline-none focus:border-[#18B69B] focus:ring-2 focus:ring-[#18B69B]/20 appearance-none bg-white w-full sm:w-auto"
+            >
+              <option value="all">All Status</option>
+              <option value="active">Active</option>
+              <option value="suspended">Suspended</option>
+            </select>
+            <Filter className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400 pointer-events-none" />
+          </div>
         </div>
         <button 
           onClick={() => setShowCreateModal(true)}
-          className="h-9 px-3 text-sm text-white bg-[#18B69B] rounded-lg hover:bg-[#18B69B]/90 flex items-center gap-2 transition-all shadow-sm hover:shadow"
+          className="h-9 px-3 text-sm text-white bg-[#18B69B] rounded-lg hover:bg-[#18B69B]/90 flex items-center gap-2 transition-all shadow-sm hover:shadow w-full sm:w-auto justify-center"
         >
           <Plus className="h-4 w-4" />
           <span>Add Agent</span>
@@ -326,7 +350,7 @@ export default function AccountPage() {
                     </div>
                   </td>
                 </tr>
-              ) : data?.getAgents.length === 0 ? (
+              ) : filteredAgents?.length === 0 ? (
                 <tr>
                   <td colSpan={8} className="px-4 py-8 text-center text-gray-500 min-h-[200px]">
                     <div className="flex flex-col items-center gap-2">
@@ -336,7 +360,7 @@ export default function AccountPage() {
                   </td>
                 </tr>
               ) : (
-                data?.getAgents.map((agent: any) => (
+                filteredAgents?.map((agent: any) => (
                   <tr key={agent.id} className="hover:bg-gray-50/50 transition-colors min-h-[64px]">
                     <td className="px-4 py-3 w-[220px]">
                       <div className="flex items-center">

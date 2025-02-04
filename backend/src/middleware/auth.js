@@ -1,7 +1,8 @@
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
+const ApiKey = require('../models/ApiKey');
 
-exports.protect = async (req, res, next) => {
+const protect = async (req, res, next) => {
     try {
         // 1) Get token from header
         let token;
@@ -50,7 +51,7 @@ exports.protect = async (req, res, next) => {
     }
 };
 
-exports.authorize = (...roles) => {
+const authorize = (...roles) => {
     return (req, res, next) => {
         if (!roles.includes(req.user.role)) {
             return res.status(403).json({
@@ -59,4 +60,56 @@ exports.authorize = (...roles) => {
         }
         next();
     };
+};
+
+const authenticateApiKey = async (req, res, next) => {
+  try {
+    const authHeader = req.headers.authorization;
+    
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({
+        success: false,
+        error: 'API key is required'
+      });
+    }
+
+    const apiKey = authHeader.split(' ')[1];
+    const apiKeyDoc = await ApiKey.findOne({ key: apiKey, status: 'active' }).populate('user');
+
+    if (!apiKeyDoc) {
+      return res.status(401).json({
+        success: false,
+        error: 'Invalid or inactive API key'
+      });
+    }
+
+    if (!apiKeyDoc.user) {
+      return res.status(401).json({
+        success: false,
+        error: 'API key is not associated with a user'
+      });
+    }
+
+    // Update last used timestamp
+    await ApiKey.findByIdAndUpdate(apiKeyDoc._id, { lastUsed: new Date() });
+
+    // Attach both API key and user information to the request
+    req.apiKey = apiKeyDoc;
+    req.user = apiKeyDoc.user;
+
+    next();
+  } catch (error) {
+    console.error('API Key Authentication Error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+};
+
+// Export all middleware functions
+module.exports = {
+  protect,
+  authorize,
+  authenticateApiKey
 }; 

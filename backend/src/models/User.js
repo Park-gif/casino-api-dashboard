@@ -42,11 +42,18 @@ const userSchema = new mongoose.Schema({
     callbackUrl: {
         type: String,
         trim: true,
+        default: '',
         validate: {
             validator: function(v) {
-                return !v || /^https?:\/\/.+/.test(v);
+                if (!v) return true; // Allow empty string
+                try {
+                    new URL(v);
+                    return true;
+                } catch (err) {
+                    return false;
+                }
             },
-            message: 'Callback URL must be a valid URL'
+            message: 'Please provide a valid URL'
         }
     },
     ggrPercentage: {
@@ -101,7 +108,11 @@ const userSchema = new mongoose.Schema({
     },
     passwordChangedAt: Date,
     passwordResetToken: String,
-    passwordResetExpires: Date
+    passwordResetExpires: Date,
+    emailNotifications: {
+        type: Boolean,
+        default: true
+    }
 }, {
     timestamps: true,
     toJSON: {
@@ -166,11 +177,13 @@ userSchema.methods.changedPasswordAfter = function(JWTTimestamp) {
 
 // Method to update balance
 userSchema.methods.updateBalance = async function(amount) {
-    this.balance += amount;
-    if (this.balance < 0) {
+    const newBalance = this.balance + amount;
+    if (newBalance < 0) {
         throw new Error('Insufficient balance');
     }
-    return this.save();
+    this.balance = newBalance;
+    await this.save();
+    return this.balance;
 };
 
 // Create password reset token

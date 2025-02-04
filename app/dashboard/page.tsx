@@ -1,13 +1,38 @@
 "use client"
 
-import { Info, Copy, User, Key, Clock, Loader2, LayoutDashboard, DollarSign } from "lucide-react"
+import { Info, Copy, User, Key, Clock, Loader2, LayoutDashboard, DollarSign, Wallet, ArrowUpRight, ArrowDownRight, BarChart3, RefreshCw } from "lucide-react"
 import { useState } from "react"
 import { useQuery } from '@apollo/client'
 import { GET_BALANCE_QUERY, GET_BILLING_CYCLE_QUERY } from '@/lib/graphql/auth'
+import { GET_API_KEYS } from '@/lib/graphql/api-keys'
+import { gql } from "@apollo/client"
+
+// Add query for current user
+const GET_CURRENT_USER = gql`
+  query Me {
+    me {
+      id
+    }
+  }
+`;
+
+// Update deposit addresses query to use current user ID
+const GET_DEPOSIT_ADDRESSES = gql`
+  query GetDepositAddresses($userId: ID!) {
+    getDepositAddresses(userId: $userId) {
+      id
+      chain
+      address
+      isActive
+    }
+  }
+`;
 
 export default function DashboardPage() {
   const [copied, setCopied] = useState(false)
-  const depositAddress = "0xa38b04735C44F5e8ca6EAbFb3611E068F323a31f"
+  const [selectedChain, setSelectedChain] = useState('ETH')
+  
+  const { data: userData } = useQuery(GET_CURRENT_USER);
   
   const { data: balanceData, loading: balanceLoading } = useQuery(GET_BALANCE_QUERY, {
     fetchPolicy: 'network-only',
@@ -17,9 +42,24 @@ export default function DashboardPage() {
     fetchPolicy: 'network-only',
   })
 
+  const { data: apiKeysData, loading: apiKeysLoading } = useQuery(GET_API_KEYS, {
+    fetchPolicy: 'network-only',
+  })
+
+  // Update deposit addresses query to include userId
+  const { data: depositAddressData, loading: loadingAddresses } = useQuery(GET_DEPOSIT_ADDRESSES, {
+    variables: { userId: userData?.me?.id },
+    skip: !userData?.me?.id,
+  });
+
+  // Get selected address
+  const selectedAddress = depositAddressData?.getDepositAddresses?.find(
+    (addr: any) => addr.chain === selectedChain
+  )?.address || "";
+
   const copyToClipboard = async () => {
     try {
-      await navigator.clipboard.writeText(depositAddress)
+      await navigator.clipboard.writeText(selectedAddress)
       setCopied(true)
       setTimeout(() => setCopied(false), 2000)
     } catch (err) {
@@ -36,27 +76,83 @@ export default function DashboardPage() {
     <div className="p-3 sm:p-6 space-y-4 sm:space-y-6">
       {/* Deposit Info */}
       <section>
-        <div className="flex items-center gap-2 mb-3 sm:mb-4">
-          <Info className="h-4 sm:h-5 w-4 sm:w-5 text-[#18B69B]" />
-          <h2 className="text-base sm:text-lg font-medium">Deposit Info</h2>
+        <div className="flex items-center gap-2 mb-3">
+          <Wallet className="h-4 w-4 text-[#18B69B]" />
+          <h2 className="text-[15px] font-medium text-gray-800">Deposit Info</h2>
         </div>
-        <div className="bg-white rounded-lg p-4 sm:p-6 border border-gray-200">
-          <div className="space-y-3 sm:space-y-4">
+        <div className="bg-white rounded-lg border border-gray-200">
+          {loadingAddresses ? (
+            <div className="flex items-center justify-center h-[140px]">
+              <RefreshCw className="h-5 w-5 animate-spin text-gray-400" />
+            </div>
+          ) : depositAddressData?.getDepositAddresses?.length > 0 ? (
             <div>
-              <h3 className="text-xs sm:text-sm text-gray-600 mb-2">Your deposit address - Ethereum (ERC20)</h3>
-              <div className="flex items-center gap-2">
-                <code className="flex-1 bg-gray-50 p-2 sm:p-3 rounded-lg text-xs sm:text-sm font-mono break-all">
-                  {depositAddress}
-                </code>
-                <button
-                  onClick={copyToClipboard}
-                  className="p-1.5 sm:p-2 hover:bg-gray-100 rounded-lg transition-colors"
-                >
-                  <Copy className="h-4 sm:h-5 w-4 sm:w-5 text-gray-500" />
-                </button>
+              <div className="p-4 border-b border-gray-100">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="h-7 w-7 rounded-full bg-[#18B69B]/10 flex items-center justify-center">
+                      <Wallet className="h-3.5 w-3.5 text-[#18B69B]" />
+                    </div>
+                    <div className="relative">
+                      <select
+                        value={selectedChain}
+                        onChange={(e) => setSelectedChain(e.target.value)}
+                        className="appearance-none bg-gray-50 text-[13px] font-medium text-gray-700 pl-3 pr-8 py-1.5 rounded-md border border-gray-200 focus:outline-none focus:ring-1 focus:ring-[#18B69B] hover:border-gray-300 transition-colors"
+                      >
+                        {depositAddressData.getDepositAddresses.map((addr: any) => (
+                          <option key={addr.id} value={addr.chain}>
+                            {addr.chain === 'ETH' ? 'Ethereum (ERC20)' : addr.chain}
+                          </option>
+                        ))}
+                      </select>
+                      <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-2">
+                        <svg className="h-4 w-4 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 9l-7 7-7-7" />
+                        </svg>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <div className="w-2 h-2 rounded-full bg-green-500"></div>
+                    <span className="text-[12px] text-gray-500">Active</span>
+                  </div>
+                </div>
+              </div>
+              
+              <div className="p-4">
+                <div className="flex flex-col gap-3">
+                  <div className="flex items-center gap-2 text-[13px] text-gray-500">
+                    <Info className="h-3.5 w-3.5" />
+                    <span>Send only {selectedChain} tokens to this address (min. $10)</span>
+                  </div>
+                  
+                  <div className="flex items-center gap-2 bg-gray-50 p-2.5 rounded border border-gray-100">
+                    <code className="flex-1 text-[13px] font-mono text-gray-600 break-all">
+                      {selectedAddress}
+                    </code>
+                    <button
+                      onClick={copyToClipboard}
+                      className={`shrink-0 p-1.5 rounded transition-all ${
+                        copied 
+                          ? 'bg-[#18B69B]/10 text-[#18B69B]' 
+                          : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100'
+                      }`}
+                    >
+                      <Copy className="h-4 w-4" />
+                    </button>
+                  </div>
+                  
+                  <p className="text-[12px] text-gray-500">
+                    Your deposit will be credited automatically after network confirmation
+                  </p>
+                </div>
               </div>
             </div>
-          </div>
+          ) : (
+            <div className="flex items-center justify-center h-[140px]">
+              <p className="text-[13px] text-gray-500">No deposit addresses available</p>
+            </div>
+          )}
         </div>
       </section>
 
@@ -187,8 +283,19 @@ export default function DashboardPage() {
                 <Key className="h-4 sm:h-5 w-4 sm:w-5 text-purple-500" />
               </div>
               <div className="flex-1 min-w-0">
-                <h3 className="text-sm sm:text-base font-medium mb-1">Amount of API Keys: 1</h3>
-                <p className="text-xs sm:text-sm text-gray-600">Feel free to ask support additional api keys for your integration.</p>
+                <h3 className="text-sm sm:text-base font-medium mb-1">
+                  {apiKeysLoading ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    `Amount of API Keys: ${apiKeysData?.getApiKeys?.length || 0}`
+                  )}
+                </h3>
+                <p className="text-xs sm:text-sm text-gray-600">
+                  {apiKeysData?.getApiKeys?.length >= 3 
+                    ? "You have reached the maximum number of API keys."
+                    : "Feel free to ask support additional api keys for your integration."
+                  }
+                </p>
               </div>
               <button className="text-gray-400 hover:text-gray-500 flex-shrink-0">
                 <Info className="h-4 sm:h-5 w-4 sm:w-5" />

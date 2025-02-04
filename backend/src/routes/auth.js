@@ -3,83 +3,59 @@ const router = express.Router();
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 const { protect } = require('../middleware/auth');
-const crypto = require('crypto');
+const { generateRefreshToken, generateAccessToken } = require('../utils/auth');
 
-// Generate secure refresh token
-const generateRefreshToken = () => {
-    return crypto.randomBytes(40).toString('hex');
-};
-
-// Generate access token
-const generateAccessToken = (user) => {
-    return jwt.sign(
-        {
-            id: user._id,
-            username: user.username,
-            email: user.email,
-            role: user.role,
-            balance: user.balance,
-            tokenVersion: user.tokenVersion // For invalidating tokens on password change/logout
-        },
-        process.env.JWT_SECRET,
-        { expiresIn: '180d' } // 6 months access token
-    );
-};
-
-// Register user
+// Register
 router.post('/register', async (req, res) => {
     try {
         const { username, email, password } = req.body;
 
-        // Validate username is not an email
-        if (username.includes('@')) {
-            return res.status(400).json({ error: 'Username cannot be an email address' });
-        }
-
         // Check if user exists
-        const userExists = await User.findOne({ $or: [{ email }, { username }] });
-        if (userExists) {
-            return res.status(400).json({ error: 'User already exists' });
+        const existingUser = await User.findOne({ $or: [{ email }, { username }] });
+        if (existingUser) {
+            return res.status(400).json({
+                success: false,
+                error: 'User already exists'
+            });
         }
 
-        // Create user with initial token version
+        // Create user
         const user = await User.create({
             username,
             email,
             password,
-            balance: 1000,
-            tokenVersion: 0,
-            refreshToken: generateRefreshToken()
+            role: 'user'
         });
 
-        // Generate tokens
-        const accessToken = generateAccessToken(user);
-
-        // Set refresh token in HTTP-only cookie
-        res.cookie('refreshToken', user.refreshToken, {
-            httpOnly: true,
-            secure: process.env.NODE_ENV === 'production',
-            sameSite: 'strict',
-            maxAge: 30 * 24 * 60 * 60 * 1000 // 30 days
-        });
+        // Generate token
+        const token = jwt.sign(
+            { 
+                id: user._id,
+                tokenVersion: user.tokenVersion
+            },
+            process.env.JWT_SECRET,
+            { expiresIn: '1d' }
+        );
 
         res.status(201).json({
             success: true,
-            accessToken,
+            token,
             user: {
                 id: user._id,
                 username: user.username,
                 email: user.email,
-                role: user.role,
-                balance: user.balance
+                role: user.role
             }
         });
     } catch (error) {
-        res.status(500).json({ error: error.message });
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
     }
 });
 
-// Login user
+// Login
 router.post('/login', async (req, res) => {
     try {
         const { email, password } = req.body;
@@ -87,93 +63,70 @@ router.post('/login', async (req, res) => {
         // Check if user exists
         const user = await User.findOne({ email }).select('+password');
         if (!user) {
-            return res.status(401).json({ error: 'Invalid credentials' });
+            return res.status(401).json({
+                success: false,
+                error: 'Invalid credentials'
+            });
         }
 
         // Check password
         const isMatch = await user.matchPassword(password);
         if (!isMatch) {
-            return res.status(401).json({ error: 'Invalid credentials' });
+            return res.status(401).json({
+                success: false,
+                error: 'Invalid credentials'
+            });
         }
 
-        // Update refresh token and last login
-        user.refreshToken = generateRefreshToken();
-        user.lastLogin = Date.now();
+        // Update last login
+        user.lastLogin = new Date();
         await user.save();
 
-        // Generate access token
-        const accessToken = generateAccessToken(user);
-
-        // Set refresh token in HTTP-only cookie
-        res.cookie('refreshToken', user.refreshToken, {
-            httpOnly: true,
-            secure: process.env.NODE_ENV === 'production',
-            sameSite: 'strict',
-            maxAge: 30 * 24 * 60 * 60 * 1000 // 30 days
-        });
+        // Generate token
+        const token = jwt.sign(
+            { 
+                id: user._id,
+                tokenVersion: user.tokenVersion
+            },
+            process.env.JWT_SECRET,
+            { expiresIn: '1d' }
+        );
 
         res.json({
             success: true,
-            accessToken,
+            token,
             user: {
                 id: user._id,
                 username: user.username,
                 email: user.email,
-                role: user.role,
-                balance: user.balance
+                role: user.role
             }
         });
     } catch (error) {
-        res.status(500).json({ error: error.message });
-    }
-});
-
-// Refresh access token
-router.post('/refresh-token', async (req, res) => {
-    try {
-        const refreshToken = req.cookies.refreshToken;
-        
-        if (!refreshToken) {
-            return res.status(401).json({ error: 'No refresh token' });
-        }
-
-        // Find user by refresh token
-        const user = await User.findOne({ refreshToken });
-        if (!user) {
-            return res.status(401).json({ error: 'Invalid refresh token' });
-        }
-
-        // Generate new access token
-        const accessToken = generateAccessToken(user);
-
-        res.json({
-            success: true,
-            accessToken
+        res.status(500).json({
+            success: false,
+            error: error.message
         });
-    } catch (error) {
-        res.status(401).json({ error: 'Invalid refresh token' });
     }
 });
 
 // Logout
 router.post('/logout', protect, async (req, res) => {
     try {
-        const user = await User.findById(req.user.id);
-        if (!user) {
-            return res.status(404).json({ error: 'User not found' });
-        }
+        // Increment token version to invalidate all existing tokens
+        await User.findByIdAndUpdate(req.user.id, {
+            $inc: { tokenVersion: 1 }
+        });
 
-        // Invalidate refresh token
-        user.refreshToken = null;
-        user.tokenVersion += 1; // Invalidate all existing tokens
-        await user.save();
-
-        // Clear refresh token cookie
-        res.clearCookie('refreshToken');
-
-        res.json({ success: true });
+        res.json({
+            success: true,
+            message: 'Logged out successfully'
+        });
     } catch (error) {
-        res.status(500).json({ error: error.message });
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
     }
 });
 
@@ -182,7 +135,10 @@ router.get('/me', protect, async (req, res) => {
     try {
         const user = await User.findById(req.user.id);
         if (!user) {
-            return res.status(404).json({ error: 'User not found' });
+            return res.status(404).json({
+                success: false,
+                error: 'User not found'
+            });
         }
 
         res.json({
@@ -192,20 +148,28 @@ router.get('/me', protect, async (req, res) => {
                 username: user.username,
                 email: user.email,
                 role: user.role,
-                balance: user.balance
+                balance: user.balance,
+                currency: user.currency,
+                status: user.status
             }
         });
     } catch (error) {
-        res.status(500).json({ error: error.message });
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
     }
 });
 
-// Get balance (separate endpoint for sensitive data)
+// Get balance
 router.get('/balance', protect, async (req, res) => {
     try {
         const user = await User.findById(req.user.id);
         if (!user) {
-            return res.status(404).json({ error: 'User not found' });
+            return res.status(404).json({ 
+                success: false,
+                error: 'User not found' 
+            });
         }
 
         res.json({
@@ -213,17 +177,23 @@ router.get('/balance', protect, async (req, res) => {
             balance: user.balance
         });
     } catch (error) {
-        res.status(500).json({ error: error.message });
+        res.status(500).json({ 
+            success: false,
+            error: error.message 
+        });
     }
 });
 
-// Update balance (separate endpoint for sensitive data)
+// Update balance
 router.post('/balance', protect, async (req, res) => {
     try {
         const { amount } = req.body;
         const user = await User.findById(req.user.id);
         if (!user) {
-            return res.status(404).json({ error: 'User not found' });
+            return res.status(404).json({ 
+                success: false,
+                error: 'User not found' 
+            });
         }
 
         await user.updateBalance(amount);
@@ -233,7 +203,10 @@ router.post('/balance', protect, async (req, res) => {
             balance: user.balance
         });
     } catch (error) {
-        res.status(400).json({ error: error.message });
+        res.status(400).json({ 
+            success: false,
+            error: error.message 
+        });
     }
 });
 
