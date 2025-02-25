@@ -20,6 +20,7 @@ import {
   Power
 } from "lucide-react"
 import { GET_API_KEYS, CREATE_API_KEY, DELETE_API_KEY, TOGGLE_API_KEY_STATUS } from "@/lib/graphql/api-keys"
+import { copyToClipboard } from '@/lib/utils'
 
 interface ApiKey {
   id: string
@@ -127,8 +128,8 @@ export default function ApiKeysPage() {
     }
   }
 
-  const handleCopyKey = (text: string) => {
-    navigator.clipboard.writeText(text)
+  const handleCopyKey = (text: string, type: string) => {
+    copyToClipboard(text, `${type} copied to clipboard!`);
   }
 
   const filteredKeys = data?.getApiKeys.filter((key: ApiKey) => {
@@ -271,7 +272,7 @@ export default function ApiKeysPage() {
                         <div className="flex items-center gap-2">
                           <span className="text-[13px] font-medium text-[#18B69B] truncate">{key.id}</span>
                           <button 
-                            onClick={() => handleCopyKey(key.id)}
+                            onClick={() => handleCopyKey(key.id, 'API Key ID')}
                             className="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-50 rounded transition-all flex-shrink-0"
                           >
                             <Copy className="h-3.5 w-3.5" />
@@ -287,7 +288,7 @@ export default function ApiKeysPage() {
                         <div className="flex items-center gap-2">
                           <code className="text-[13px] font-mono text-gray-600 truncate">{key.key}</code>
                           <button 
-                            onClick={() => handleCopyKey(key.key)}
+                            onClick={() => handleCopyKey(key.key, 'API Key')}
                             className="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-50 rounded transition-all flex-shrink-0"
                           >
                             <Copy className="h-3.5 w-3.5" />
@@ -415,7 +416,7 @@ export default function ApiKeysPage() {
                   <div className="flex items-center gap-2 bg-gray-50 p-3 rounded-lg">
                     <code className="text-sm font-mono text-gray-900 flex-1 break-all">{showNewKey.key}</code>
                     <button 
-                      onClick={() => handleCopyKey(showNewKey.key)}
+                      onClick={() => handleCopyKey(showNewKey.key, 'API Key')}
                       className="p-1.5 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded transition-all"
                     >
                       <Copy className="h-4 w-4" />

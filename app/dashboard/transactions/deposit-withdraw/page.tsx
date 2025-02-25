@@ -16,6 +16,17 @@ import {
   Eye,
   MoreVertical
 } from "lucide-react"
+import { getCurrencySymbol } from '@/lib/currency-utils'
+import { gql, useQuery } from "@apollo/client"
+
+const GET_CURRENT_USER = gql`
+  query Me {
+    me {
+      id
+      currency
+    }
+  }
+`;
 
 interface Transaction {
   id: string
@@ -32,6 +43,10 @@ export default function DepositWithdrawPage() {
   const [searchQuery, setSearchQuery] = useState("")
   const [selectedType, setSelectedType] = useState<string>("all")
   const [selectedStatus, setSelectedStatus] = useState<string>("all")
+  
+  const { data: userData } = useQuery(GET_CURRENT_USER);
+  const userCurrency = userData?.me?.currency || 'USD';
+  const currencySymbol = getCurrencySymbol(userCurrency);
 
   const transactions: Transaction[] = [
     {
@@ -206,7 +221,7 @@ export default function DepositWithdrawPage() {
                     <span className={`text-[13px] font-medium ${
                       tx.type === 'deposit' ? 'text-[#1cc88a]' : 'text-[#e74a3b]'
                     }`}>
-                      {tx.type === 'deposit' ? '+' : '-'}${tx.amount}
+                      {tx.type === 'deposit' ? '+' : '-'}{getCurrencySymbol(tx.currency)}{tx.amount.toFixed(2)}
                     </span>
                   </td>
                   <td className="px-4 py-3">

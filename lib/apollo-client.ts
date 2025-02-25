@@ -5,19 +5,24 @@ import Cookies from 'js-cookie';
 
 const TOKEN_KEY = 'auth_token';
 
-// Debug log for API URL
-const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
+// API URL configuration based on environment
+const apiUrl = process.env.NODE_ENV === 'production'
+  ? 'https://moonshoot.fun:2053'
+  : 'http://localhost:2053';
+
+console.log('Environment:', process.env.NODE_ENV);
 console.log('API URL:', apiUrl);
 
+// HTTP link with credentials
 const httpLink = createHttpLink({
   uri: `${apiUrl}/graphql`,
   credentials: 'include',
   fetchOptions: {
-    mode: 'cors',
-  },
+    credentials: 'include',
+  }
 });
 
-// Error handling link
+// Error handling link with detailed logging
 const errorLink = onError(({ graphQLErrors, networkError }) => {
   if (graphQLErrors) {
     graphQLErrors.forEach(({ message, locations, path }) => {
@@ -34,7 +39,6 @@ const errorLink = onError(({ graphQLErrors, networkError }) => {
   }
   if (networkError) {
     console.error(`[Network error]:`, networkError);
-    // Log detailed network error
     if ('statusCode' in networkError) {
       console.error(`Status code: ${networkError.statusCode}`);
     }
@@ -44,22 +48,17 @@ const errorLink = onError(({ graphQLErrors, networkError }) => {
   }
 });
 
-// Auth link for adding token to headers
+// Auth link with credentials
 const authLink = setContext((_, { headers }) => {
   const token = Cookies.get(TOKEN_KEY);
-  console.log('Current token:', token); // Debug log
-  console.log('Current headers:', headers); // Debug log
-  
-  const updatedHeaders = {
-    ...headers,
-    authorization: token ? `Bearer ${token}` : '',
-    'Content-Type': 'application/json',
-  };
-  
-  console.log('Updated headers:', updatedHeaders); // Debug log
   
   return {
-    headers: updatedHeaders,
+    headers: {
+      ...headers,
+      authorization: token ? `Bearer ${token}` : '',
+      'Content-Type': 'application/json',
+      'Access-Control-Allow-Credentials': 'true'
+    }
   };
 });
 
@@ -79,6 +78,7 @@ const client = new ApolloClient({
     }
   },
   connectToDevTools: process.env.NODE_ENV === 'development',
+  credentials: 'include'
 });
 
 export default client; 

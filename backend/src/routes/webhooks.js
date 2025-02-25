@@ -149,4 +149,15 @@ function getRequiredConfirmations(chain) {
   }
 }
 
+// Handle Oxapay payment notifications
+router.post('/oxapay', async (req, res) => {
+  try {
+    const { depositController } = require('../controllers/depositController');
+    await depositController.handleOxapayCallback(req, res);
+  } catch (error) {
+    console.error('Error in Oxapay webhook:', error);
+    res.status(500).json({ success: false, message: 'Internal server error' });
+  }
+});
+
 module.exports = router; 

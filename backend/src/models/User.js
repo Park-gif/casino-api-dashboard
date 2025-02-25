@@ -36,7 +36,7 @@ const userSchema = new mongoose.Schema({
     },
     currency: {
         type: String,
-        enum: ['USD', 'EUR', 'TRY'],
+        enum: ['USD', 'EUR', 'GBP', 'BRL', 'AUD', 'CAD', 'NZD', 'TRY', 'TND'],
         default: 'USD'
     },
     callbackUrl: {
@@ -112,7 +112,25 @@ const userSchema = new mongoose.Schema({
     emailNotifications: {
         type: Boolean,
         default: true
-    }
+    },
+    players: [{
+        username: String,
+        formattedUsername: String,
+        currency: String,
+        createdAt: {
+            type: Date,
+            default: Date.now
+        },
+        lastLogin: {
+            type: Date,
+            default: null
+        },
+        status: {
+            type: String,
+            enum: ['active', 'blocked'],
+            default: 'active'
+        }
+    }]
 }, {
     timestamps: true,
     toJSON: {

@@ -18,6 +18,7 @@ import {
   Filter
 } from "lucide-react"
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
+import { copyToClipboard } from '@/lib/utils'
 
 interface MerchantStats {
   todayPayments: number
@@ -184,6 +185,10 @@ export default function MerchantsPage() {
     { name: 'Jan 7', amount: 4300 },
   ]
 
+  const handleCopyApiKey = (apiKey: string) => {
+    copyToClipboard(apiKey, 'Merchant API Key copied to clipboard!')
+  }
+
   return (
     <div className="p-4 sm:p-6 bg-[#F8F9FC] min-h-screen">
       {/* Header */}
@@ -201,7 +206,17 @@ export default function MerchantsPage() {
         <div className="bg-white p-3 sm:p-4 rounded-lg border border-gray-200 shadow-sm">
           <div className="flex items-center justify-between mb-2">
             <span className="text-[11px] sm:text-xs font-medium text-gray-500">Today payments</span>
-            <Info className="h-3 sm:h-3.5 w-3 sm:w-3.5 text-gray-400" />
+            <div className="group relative">
+              <Info className="h-3 sm:h-3.5 w-3 sm:w-3.5 text-gray-400" />
+              <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 w-48 z-50 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                <div className="bg-gray-900 text-white text-xs rounded p-2 text-center">
+                  Total amount of payments received from all merchants today
+                  <div className="absolute left-1/2 transform -translate-x-1/2 top-full">
+                    <div className="border-4 border-transparent border-t-gray-900"></div>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
           <div className="flex items-baseline gap-1">
             <DollarSign className="h-3.5 sm:h-4 w-3.5 sm:w-4 text-gray-400" />
@@ -212,7 +227,17 @@ export default function MerchantsPage() {
         <div className="bg-white p-3 sm:p-4 rounded-lg border border-gray-200 shadow-sm">
           <div className="flex items-center justify-between mb-2">
             <span className="text-[11px] sm:text-xs font-medium text-gray-500">This week</span>
-            <Info className="h-3 sm:h-3.5 w-3 sm:w-3.5 text-gray-400" />
+            <div className="group relative">
+              <Info className="h-3 sm:h-3.5 w-3 sm:w-3.5 text-gray-400" />
+              <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 w-48 z-50 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                <div className="bg-gray-900 text-white text-xs rounded p-2 text-center">
+                  Total amount of payments received from all merchants this week
+                  <div className="absolute left-1/2 transform -translate-x-1/2 top-full">
+                    <div className="border-4 border-transparent border-t-gray-900"></div>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
           <div className="flex items-baseline gap-1">
             <DollarSign className="h-3.5 sm:h-4 w-3.5 sm:w-4 text-gray-400" />
@@ -223,7 +248,17 @@ export default function MerchantsPage() {
         <div className="bg-white p-3 sm:p-4 rounded-lg border border-gray-200 shadow-sm">
           <div className="flex items-center justify-between mb-2">
             <span className="text-[11px] sm:text-xs font-medium text-gray-500">This month</span>
-            <Info className="h-3 sm:h-3.5 w-3 sm:w-3.5 text-gray-400" />
+            <div className="group relative">
+              <Info className="h-3 sm:h-3.5 w-3 sm:w-3.5 text-gray-400" />
+              <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 w-48 z-50 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                <div className="bg-gray-900 text-white text-xs rounded p-2 text-center">
+                  Total amount of payments received from all merchants this month
+                  <div className="absolute left-1/2 transform -translate-x-1/2 top-full">
+                    <div className="border-4 border-transparent border-t-gray-900"></div>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
           <div className="flex items-baseline gap-1">
             <DollarSign className="h-3.5 sm:h-4 w-3.5 sm:w-4 text-gray-400" />
@@ -234,7 +269,17 @@ export default function MerchantsPage() {
         <div className="bg-white p-3 sm:p-4 rounded-lg border border-gray-200 shadow-sm">
           <div className="flex items-center justify-between mb-2">
             <span className="text-[11px] sm:text-xs font-medium text-gray-500">All time</span>
-            <Info className="h-3 sm:h-3.5 w-3 sm:w-3.5 text-gray-400" />
+            <div className="group relative">
+              <Info className="h-3 sm:h-3.5 w-3 sm:w-3.5 text-gray-400" />
+              <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 w-48 z-50 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                <div className="bg-gray-900 text-white text-xs rounded p-2 text-center">
+                  Total amount of payments received from all merchants since account creation
+                  <div className="absolute left-1/2 transform -translate-x-1/2 top-full">
+                    <div className="border-4 border-transparent border-t-gray-900"></div>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
           <div className="flex items-baseline gap-1">
             <DollarSign className="h-3.5 sm:h-4 w-3.5 sm:w-4 text-gray-400" />
@@ -249,7 +294,20 @@ export default function MerchantsPage() {
         <div className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
           <div className="p-3 sm:p-4 border-b border-gray-200">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-              <h2 className="text-base font-semibold text-gray-900">Your merchants transactions</h2>
+              <div className="flex items-center gap-2">
+                <h2 className="text-base font-semibold text-gray-900">Your merchants transactions</h2>
+                <div className="group relative">
+                  <Info className="h-3.5 w-3.5 text-gray-400" />
+                  <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 w-64 z-50 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                    <div className="bg-gray-900 text-white text-xs rounded p-2 text-center">
+                      View all transactions from your merchants. Use filters to find specific transactions.
+                      <div className="absolute left-1/2 transform -translate-x-1/2 top-full">
+                        <div className="border-4 border-transparent border-t-gray-900"></div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
               <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
                 <div className="relative">
                   <input
@@ -342,9 +400,22 @@ export default function MerchantsPage() {
         {/* Right Column - Merchants payments statistics */}
         <div className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
           <div className="p-3 sm:p-4 border-b border-gray-200">
-            <div>
-              <h2 className="text-base font-semibold text-gray-900">Merchants payments statistics</h2>
-              <p className="text-sm text-gray-500">The last 7 days merchants payments</p>
+            <div className="flex items-center gap-2">
+              <div>
+                <h2 className="text-base font-semibold text-gray-900">Merchants payments statistics</h2>
+                <p className="text-sm text-gray-500">The last 7 days merchants payments</p>
+              </div>
+              <div className="group relative">
+                <Info className="h-3.5 w-3.5 text-gray-400" />
+                <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 w-64 z-50 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                  <div className="bg-gray-900 text-white text-xs rounded p-2 text-center">
+                    Visual representation of payment trends over the last 7 days. Monitor your merchant activity and identify patterns.
+                    <div className="absolute left-1/2 transform -translate-x-1/2 top-full">
+                      <div className="border-4 border-transparent border-t-gray-900"></div>
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
           <div className="p-3 sm:p-4">
@@ -403,7 +474,20 @@ export default function MerchantsPage() {
       <div className="mt-4 sm:mt-6 bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
         <div className="p-3 sm:p-4 border-b border-gray-200">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <h2 className="text-base font-semibold text-gray-900">Your merchant API keys</h2>
+            <div className="flex items-center gap-2">
+              <h2 className="text-base font-semibold text-gray-900">Your merchant API keys</h2>
+              <div className="group relative">
+                <Info className="h-3.5 w-3.5 text-gray-400" />
+                <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 w-64 z-50 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                  <div className="bg-gray-900 text-white text-xs rounded p-2 text-center">
+                    Manage your merchant API keys. Each key can be used to integrate payment processing into your applications.
+                    <div className="absolute left-1/2 transform -translate-x-1/2 top-full">
+                      <div className="border-4 border-transparent border-t-gray-900"></div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
             <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
               <div className="relative">
                 <input
@@ -504,7 +588,10 @@ export default function MerchantsPage() {
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-2">
                       <code className="text-[13px] font-mono text-gray-600">{merchant.merchantAPIKey}</code>
-                      <button className="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-50 rounded transition-all">
+                      <button 
+                        onClick={() => handleCopyApiKey(merchant.merchantAPIKey)}
+                        className="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-50 rounded transition-all"
+                      >
                         <Copy className="h-3.5 w-3.5" />
                       </button>
                     </div>

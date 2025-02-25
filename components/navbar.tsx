@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Search, User, Settings, ChevronDown, LogOut, BarChart3, DollarSign, LayoutDashboard } from "lucide-react";
+import { Search, User, Settings, ChevronDown, LogOut, BarChart3, DollarSign, LayoutDashboard, Home } from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
 import { useState } from "react";
 import { useAuth } from "@/lib/auth-context";
@@ -60,12 +60,16 @@ const NavBar = () => {
     <>
       <div className="sticky top-0 z-30 flex h-16 items-center gap-4 border-b border-gray-200 bg-white px-4 shadow-sm">
         <div className="flex flex-1 items-center justify-between">
-          {/* Left side - Breadcrumb and Stats */}
+          {/* Left side - Home button and Stats */}
           <div className="flex items-center gap-6">
-            <div className="flex items-center gap-2 text-sm">
-              <span className="text-gray-500">{getPageTitle()}</span>
-              <ChevronDown className="h-4 w-4 text-gray-400" />
-            </div>
+            <Link 
+              href="/dashboard" 
+              className="flex items-center gap-1.5 hover:bg-gray-50 p-1.5 rounded-md transition-colors group"
+            >
+              <div className="h-8 w-8 bg-[#18B69B]/10 rounded-lg flex items-center justify-center">
+                <Home className="h-4 w-4 text-[#18B69B] group-hover:text-[#18B69B]/80" />
+              </div>
+            </Link>
 
             {/* Stats */}
             <div className="hidden md:flex items-center gap-6 text-sm">

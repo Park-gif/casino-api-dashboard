@@ -21,7 +21,7 @@ interface AuthContextType {
     user: User | null;
     token: string | null;
     login: (email: string, password: string, rememberMe: boolean) => Promise<void>;
-    register: (username: string, email: string, password: string, rememberMe: boolean) => Promise<void>;
+    register: (username: string, email: string, password: string, currency: string, rememberMe: boolean) => Promise<void>;
     logout: () => void;
     loading: boolean;
     isAuthenticated: boolean;
@@ -149,11 +149,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
     };
 
-    const register = async (username: string, email: string, password: string, rememberMe: boolean) => {
+    const register = async (username: string, email: string, password: string, currency: string, rememberMe: boolean) => {
         try {
             const { data } = await registerMutation({
                 variables: {
-                    input: { username, email, password }
+                    input: { username, email, password, currency }
                 }
             });
 

@@ -1,0 +1,9 @@
+type LaunchGameResponse {
+  url: String!  # Non-nullable, will return fallback URL in error cases
+  success: Boolean!
+  error: String
+}
+
+type Mutation {
+  launchGame(gameId: ID!): LaunchGameResponse!
+} 

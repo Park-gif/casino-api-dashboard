@@ -5,56 +5,10 @@ const axios = require('axios');
 const ActivityLog = require('../models/ActivityLog');
 const User = require('../models/User');
 const crypto = require('crypto');
-
-const SPINGATE_CONFIG = {
-  api_login: '0047cd0d-5a40-48a9-a6bc-cb8a615f0690-578867',
-  api_password: 'tfonhVGglLFJ'
-};
-
-const SPINGATE_API_URL = 'https://gs.aggregtr.com/api/system/operator';
-
-// Sample game list data
-const games = [
-  {
-    id: "1",
-    name: "Book of Ra",
-    provider: "Novomatic",
-    thumbnail: "https://example.com/book-of-ra.jpg",
-    type: "Slot",
-    status: "active"
-  },
-  {
-    id: "2",
-    name: "Starburst",
-    provider: "NetEnt",
-    thumbnail: "https://example.com/starburst.jpg",
-    type: "Slot",
-    status: "active"
-  },
-  {
-    id: "3",
-    name: "Gonzo's Quest",
-    provider: "NetEnt",
-    thumbnail: "https://example.com/gonzos-quest.jpg",
-    type: "Slot",
-    status: "active"
-  }
-];
-
-// Game List endpoint
-router.get('/v1/gamelist', authenticateApiKey, (req, res) => {
-  try {
-    res.json({
-      success: true,
-      games: games
-    });
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      error: error.message
-    });
-  }
-});
+const { SPINGATE_API_URL, SPINGATE_CONFIG } = require('../config/spingate');
+const gameService = require('../services/gameService');
+const cachedGameService = require('../services/cachedGameService');
+const SlotTransaction = require('../models/SlotTransaction');
 
 // Spingate Player Creation endpoint
 router.post('/v1/player/create', authenticateApiKey, async (req, res) => {
@@ -97,6 +51,26 @@ router.post('/v1/player/create', authenticateApiKey, async (req, res) => {
 
     console.log('Spingate response:', response.data);
 
+    // Save player information to User model
+    const user = await User.findById(req.user.id);
+    if (!user) {
+      throw new Error('User not found');
+    }
+
+    // Check if player already exists
+    const existingPlayer = user.players.find(p => p.username === username || p.formattedUsername === formattedUsername);
+    if (!existingPlayer) {
+      user.players.push({
+        username,
+        formattedUsername,
+        currency: req.user.currency,
+        createdAt: new Date(),
+        lastLogin: null,
+        status: 'active'
+      });
+      await user.save();
+    }
+
     // Log the activity
     await ActivityLog.create({
       userId: req.user.id,
@@ -107,14 +81,23 @@ router.post('/v1/player/create', authenticateApiKey, async (req, res) => {
         originalUsername: username,
         formattedUsername,
         currency: req.user.currency,
-        spingateResponse: response.data
+        spingate_response: response.data
       }
     });
 
     // Return success response
     res.json({
       success: true,
-      data: response.data
+      data: {
+        ...response.data,
+        player: {
+          username,
+          formattedUsername,
+          currency: req.user.currency,
+          createdAt: new Date(),
+          status: 'active'
+        }
+      }
     });
 
   } catch (error) {
@@ -128,7 +111,7 @@ router.post('/v1/player/create', authenticateApiKey, async (req, res) => {
         data: JSON.parse(error.config?.data || '{}')
       }
     });
-    
+
     res.status(error.response?.status || 500).json({
       success: false,
       error: error.response?.data?.message || error.message,
@@ -251,7 +234,7 @@ router.post('/v1/game/launch', authenticateApiKey, async (req, res) => {
 });
 
 // Balance Callback endpoint
-router.get('/v1/callback/balance', async (req, res) => {
+router.get('/slots/softswiss', async (req, res) => {
   try {
     console.log('Received balance callback:', req.query);
 
@@ -282,7 +265,7 @@ router.get('/v1/callback/balance', async (req, res) => {
     }
 
     // Validate action type
-    if (action !== 'balance') {
+    if (!['balance', 'debit', 'credit'].includes(action)) {
       console.log('Invalid action type:', action);
       return res.json({
         error: 2,
@@ -290,45 +273,40 @@ router.get('/v1/callback/balance', async (req, res) => {
       });
     }
 
-    // Format username to match our format: username_{currency}_{merchantusername}
-    const [playerUsername, playerCurrency, merchantUsername] = username.split('_');
-    if (!playerUsername || !playerCurrency || !merchantUsername) {
-      console.log('Invalid username format:', username);
+    // Get user and their callback URL
+    const user = await User.findOne({
+      'players.formattedUsername': username
+    });
+    if (!user || !user.callbackUrl) {
+      console.log('User not found or callback URL not set:', username);
       return res.json({
         error: 2,
         balance: 0
       });
     }
 
-    // Find merchant by username
-    const merchant = await User.findOne({ username: merchantUsername });
-    if (!merchant || !merchant.callbackUrl) {
-      console.log('Merchant not found or callback URL not set:', merchantUsername);
+    // Find the specific player from user's players array
+    const player = user.players.find(p => p.formattedUsername === username);
+    if (!player) {
+      console.log('Player not found:', username);
       return res.json({
         error: 2,
         balance: 0
       });
     }
 
-    // Forward request to merchant's callback URL
-    console.log('Forwarding request to merchant callback:', merchant.callbackUrl);
-    
-    const callbackResponse = await axios.get(merchant.callbackUrl, {
-      params: {
-        username: playerUsername,
-        currency,
-        action,
-        call_id,
-        timestamp,
-        key
-      }
+    console.log('Forwarding request to callback URL:', user.callbackUrl);
+
+    // Forward request to user's callback URL with all original parameters
+    const callbackResponse = await axios.get(user.callbackUrl, {
+      params: req.query // Forward all received parameters
     });
 
-    console.log('Merchant callback response:', callbackResponse.data);
+    console.log('Callback response:', callbackResponse.data);
 
-    // Validate merchant response format
+    // Validate response format
     if (!callbackResponse.data || typeof callbackResponse.data.error === 'undefined' || typeof callbackResponse.data.balance === 'undefined') {
-      console.log('Invalid merchant response format');
+      console.log('Invalid response format');
       return res.json({
         error: 2,
         balance: 0
@@ -337,25 +315,51 @@ router.get('/v1/callback/balance', async (req, res) => {
 
     // Log the activity
     await ActivityLog.create({
-      userId: merchant.id,
-      username: merchant.username,
+      userId: user._id,
+      username: user.username,
       activityType: 'BALANCE_CHECK',
-      description: `Balance check for player ${playerUsername}`,
+      description: `Balance check for player ${username}`,
       metadata: {
         call_id,
         currency,
-        merchantResponse: callbackResponse.data,
+        response: callbackResponse.data,
         timestamp
       }
     });
 
-    // Return merchant's response
+    // Log transaction if it's a debit or credit action
+    if (req.query.action === 'debit' || req.query.action === 'credit') {
+      const amount = parseFloat(req.query.amount || '0');
+      await SlotTransaction.create({
+        playerId: user._id,
+        username: player.username, // Original username without currency and email
+        formattedUsername: player.formattedUsername, // Full formatted username
+        operator: req.query.operator_id,
+        roundId: req.query.round_id,
+        gameId: req.query.game_id,
+        type: req.query.type || 'spin',
+        credit: req.query.action === 'credit' ? amount : null,
+        debit: req.query.action === 'debit' ? amount : null,
+        currency: req.query.currency,
+        callId: req.query.call_id,
+        sessionId: req.query.session_id,
+        gameplayFinal: req.query.gameplay_final === '1',
+        status: 'completed',
+        metadata: {
+          timestamp: req.query.timestamp,
+          balanceBefore: callbackResponse.data.balance / 100, // Convert cents to dollars
+          balanceAfter: callbackResponse.data.balance / 100
+        }
+      });
+    }
+
+    // Return response
     return res.json(callbackResponse.data);
 
   } catch (error) {
     console.error('Balance callback error:', error);
     if (error.response) {
-      console.error('Merchant callback error response:', {
+      console.error('Callback error response:', {
         status: error.response.status,
         data: error.response.data
       });
@@ -372,5 +376,37 @@ function generateCallbackSignature(username, currency, action, call_id, timestam
   const data = `${username}${currency}${action}${call_id}${timestamp}${SPINGATE_CONFIG.api_password}`;
   return crypto.createHash('md5').update(data).digest('hex');
 }
+
+// Get Game List endpoint
+router.get('/v1/games', authenticateApiKey, async (req, res) => {
+  try {
+    // Get games from cache
+    const games = await cachedGameService.getGames();
+
+    // Log activity
+    await ActivityLog.create({
+      userId: req.user.id,
+      username: req.user.username,
+      activityType: 'BALANCE_CHECK',
+      description: 'Fetched game list from cache',
+      metadata: {
+        total_games: games.length
+      }
+    });
+
+    // Return success response with games
+    res.json({
+      success: true,
+      data: games
+    });
+
+  } catch (error) {
+    console.error('Game list fetch error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch games list'
+    });
+  }
+});
 
 module.exports = router; 

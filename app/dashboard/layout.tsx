@@ -12,6 +12,7 @@ export default function DashboardLayout({
   children: React.ReactNode
 }) {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false)
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false)
 
   useEffect(() => {
     const handleToggle = () => {
@@ -26,8 +27,13 @@ export default function DashboardLayout({
     <div className="min-h-screen">
       <LoadingBar />
       <div className="flex h-[calc(100vh-0px)]">
-        <Sidebar isOpen={isSidebarOpen} />
-        <div className="flex-1 overflow-auto bg-[#F8F9FC] lg:ml-64">
+        <Sidebar 
+          isOpen={isSidebarOpen} 
+          onCollapse={setIsSidebarCollapsed}
+        />
+        <div className={`flex-1 overflow-auto bg-[#F8F9FC] transition-all duration-300 ${
+          isSidebarCollapsed ? 'lg:ml-16' : 'lg:ml-64'
+        }`}>
           <NavBar />
           <main>
             {children}

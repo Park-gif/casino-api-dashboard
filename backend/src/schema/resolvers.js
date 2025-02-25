@@ -1,15 +1,22 @@
-const jwt = require('jsonwebtoken');
 const User = require('../models/User');
+const ActivityLog = require('../models/ActivityLog');
+const DepositAddress = require('../models/DepositAddress');
+const { categories } = require('../utils/auth');
+const { UserInputError, AuthenticationError } = require('apollo-server-express');
+const { GraphQLJSON } = require('graphql-type-json');
+const axios = require('axios');
+const jwt = require('jsonwebtoken');
 const ApiKey = require('../models/ApiKey');
 const SlotMachine = require('../models/SlotMachine');
-const { generateAccessToken, generateRefreshToken } = require('../utils/auth');
-const { AuthenticationError, UserInputError } = require('apollo-server-express');
-const ActivityLog = require('../models/ActivityLog');
-const { GraphQLJSON } = require('graphql-type-json');
+const { generateRefreshToken } = require('../utils/auth');
 const Game = require('../models/Game');
 const MerchantDeposit = require('../models/MerchantDeposit');
-const DepositAddress = require('../models/DepositAddress');
 const { tatumService, TatumError } = require('../services/tatum');
+const { SPINGATE_API_URL, SPINGATE_CONFIG } = require('../config/spingate');
+const oxapay = require('../services/oxapay');
+const { generateAccessToken } = require('../utils/auth');
+const { supportedCurrencies, supportedNetworks } = require('../config');
+const SlotTransaction = require('../models/SlotTransaction');
 
 // Ensure these are strings
 const SUPPORTED_CHAINS = ['BTC', 'ETH', 'TRON', 'BSC'];
@@ -268,15 +275,23 @@ const resolvers = {
         throw new Error('Failed to fetch merchant deposit');
       }
     },
-    getDepositAddresses: async (_, { userId }, { user }) => {
-      if (!user) throw new AuthenticationError('Not authenticated');
-      
-      // Only allow users to get their own deposit addresses or admins to view any
-      if (user.role !== 'admin' && user.id !== userId) {
-        throw new AuthenticationError('Not authorized');
-      }
+    getDepositAddresses: async (_, args, context) => {
+      try {
+        // Check if user is authenticated
+        if (!context.user) {
+          throw new Error('Not authenticated');
+        }
 
-      return await DepositAddress.find({ userId });
+        const addresses = await DepositAddress.find({
+          userId: context.user.id,
+          isActive: true
+        }).sort({ createdAt: -1 });
+
+        return addresses;
+      } catch (error) {
+        console.error('Error fetching deposit addresses:', error);
+        throw error;
+      }
     },
     getDepositAddress: async (_, { userId, chain }, { user }) => {
       if (!user) throw new AuthenticationError('Not authenticated');
@@ -287,89 +302,282 @@ const resolvers = {
       }
 
       return await DepositAddress.findOne({ userId, chain });
+    },
+    players: async (_, { filters, first, after }, { user }) => {
+      if (!user) throw new AuthenticationError('Not authenticated');
+
+      try {
+        let query = { _id: user.id };
+
+        // Get the user document
+        const userDoc = await User.findOne(query);
+        if (!userDoc) {
+          return {
+            players: [],
+            totalCount: 0,
+            hasNextPage: false
+          };
+        }
+
+        // Filter and process players array
+        let players = userDoc.players || [];
+
+        // Apply search filter if provided
+        if (filters?.search) {
+          const searchRegex = new RegExp(filters.search, 'i');
+          players = players.filter(player => 
+            searchRegex.test(player.username) || 
+            searchRegex.test(player.formattedUsername)
+          );
+        }
+
+        // Apply status filter if provided
+        if (filters?.status) {
+          players = players.filter(player => player.status === filters.status);
+        }
+
+        // Apply date filters if provided
+        if (filters?.dateFrom || filters?.dateTo) {
+          players = players.filter(player => {
+            const playerDate = new Date(player.createdAt);
+            const fromDate = filters.dateFrom ? new Date(filters.dateFrom) : null;
+            const toDate = filters.dateTo ? new Date(filters.dateTo) : null;
+
+            return (!fromDate || playerDate >= fromDate) && (!toDate || playerDate <= toDate);
+          });
+        }
+
+        // Apply sorting if provided
+        if (filters?.orderBy && filters?.orderDirection) {
+          players.sort((a, b) => {
+            let aValue = a[filters.orderBy];
+            let bValue = b[filters.orderBy];
+
+            // Handle special cases for sorting
+            if (filters.orderBy === 'createdAt') {
+              aValue = new Date(aValue).getTime();
+              bValue = new Date(bValue).getTime();
+            } else if (filters.orderBy === 'totalBets') {
+              aValue = aValue || 0;
+              bValue = bValue || 0;
+            }
+
+            if (filters.orderDirection === 'asc') {
+              return aValue > bValue ? 1 : -1;
+            } else {
+              return aValue < bValue ? 1 : -1;
+            }
+          });
+        }
+
+        // Handle pagination
+        const startIndex = after ? parseInt(after) : 0;
+        const hasNextPage = startIndex + first < players.length;
+        const paginatedPlayers = players.slice(startIndex, startIndex + first);
+
+        return {
+          players: paginatedPlayers,
+          totalCount: players.length,
+          hasNextPage
+        };
+      } catch (error) {
+        console.error('Error fetching players:', error);
+        throw new Error('Failed to fetch players');
+      }
+    },
+    exchangeRates: async () => {
+      try {
+        const response = await fetch('https://open.er-api.com/v6/latest/USD');
+        
+        if (!response.ok) {
+          throw new Error('Failed to fetch exchange rates');
+        }
+
+        const data = await response.json();
+        
+        // Return the rates for supported currencies
+        return {
+          EUR: data.rates.EUR,
+          TRY: data.rates.TRY,
+          GBP: data.rates.GBP,
+          BRL: data.rates.BRL,
+          AUD: data.rates.AUD,
+          CAD: data.rates.CAD,
+          NZD: data.rates.NZD,
+          TND: data.rates.TND
+        };
+      } catch (error) {
+        console.error('Error fetching exchange rates:', error);
+        // Return default rates in case of error
+        return {
+          EUR: 0.966768,
+          TRY: 35.984935,
+          GBP: 0.805557,
+          BRL: 5.763624,
+          AUD: 1.593471,
+          CAD: 1.430113,
+          NZD: 1.76584,
+          TND: 3.198701
+        };
+      }
+    },
+    slotTransactions: async (_, { filter = {}, page = 1, limit = 10 }, { user }) => {
+      if (!user) {
+        throw new AuthenticationError('You must be logged in to view transactions');
+      }
+
+      try {
+        // Build query filters
+        const query = {
+          playerId: user._id // Only show transactions for the logged-in user's players
+        };
+
+        if (filter.username) {
+          query.username = filter.username;
+        }
+
+        if (filter.formattedUsername) {
+          query.formattedUsername = filter.formattedUsername;
+        }
+
+        if (filter.gameId) {
+          query.gameId = filter.gameId;
+        }
+
+        if (filter.roundId) {
+          query.roundId = filter.roundId;
+        }
+
+        if (filter.type) {
+          query.type = filter.type;
+        }
+
+        // Date range filter
+        if (filter.startDate || filter.endDate) {
+          query.createdAt = {};
+          if (filter.startDate) {
+            query.createdAt.$gte = new Date(filter.startDate);
+          }
+          if (filter.endDate) {
+            query.createdAt.$lte = new Date(filter.endDate);
+          }
+        }
+
+        // Calculate pagination
+        const skip = (page - 1) * limit;
+
+        // Get total count for pagination
+        const totalCount = await SlotTransaction.countDocuments(query);
+        const totalPages = Math.ceil(totalCount / limit);
+
+        // Get transactions with pagination
+        const transactions = await SlotTransaction.find(query)
+          .sort({ createdAt: -1 }) // Most recent first
+          .skip(skip)
+          .limit(limit);
+
+        return {
+          transactions,
+          totalCount,
+          currentPage: page,
+          totalPages
+        };
+      } catch (error) {
+        console.error('Error fetching slot transactions:', error);
+        throw new Error('Failed to fetch transactions');
+      }
     }
   },
   Mutation: {
     register: async (_, { input }) => {
-      const { username, email, password } = input;
-      
-      const existingUser = await User.findOne({ $or: [{ email }, { username }] });
-      if (existingUser) {
-        throw new UserInputError('User already exists');
-      }
-
-      const user = await User.create({
-        username,
-        email,
-        password,
-        role: 'user'
-      });
-
-      console.log('Created user:', user);
-
-      // Create deposit addresses for each supported chain
       try {
-        console.log('Creating deposit addresses for chains:', SUPPORTED_CHAINS);
-        
-        for (const chain of SUPPORTED_CHAINS) {
-          console.log(`Creating deposit address for chain: ${chain}`);
-          
-          try {
-            const addressData = await tatumService.createDepositAddress({
-              chain: chain.toString(),
-              userId: user.id
-            });
+        const { username, email, password, currency } = input;
 
-            console.log(`Created address for ${chain}:`, addressData);
+        // Check if user exists
+        const existingUser = await User.findOne({ $or: [{ email }, { username }] });
+        if (existingUser) {
+          return {
+            success: false,
+            error: 'User already exists'
+          };
+        }
 
-            // Extract address and privateKey from the response object
-            const address = addressData.address;
-            const privateKey = addressData.privateKey || addressData.key; // Handle different response formats
+        // Create user
+        const user = await User.create({
+          username,
+          email,
+          password,
+          currency,
+          role: 'user'
+        });
 
-            // Save deposit address to MongoDB with the correct string values
-            const depositAddress = await DepositAddress.create({
-              userId: user.id,
-              chain,
-              address: address, // Use the string address value
-              privateKey: privateKey, // Use the string privateKey value
-              isActive: true
-            });
+        // Get supported currencies from OxaPay
+        const supportedCurrenciesResponse = await oxapay.getSupportedCurrencies();
+        console.log('OxaPay supported currencies:', JSON.stringify(supportedCurrenciesResponse, null, 2));
 
-            console.log(`Saved deposit address to MongoDB:`, depositAddress);
+        // Create deposit addresses for supported currencies and networks
+        const addressPromises = [];
 
-            // Log activity
-            await ActivityLog.create({
-              userId: user.id,
-              username: user.username,
-              activityType: 'DEPOSIT_ADDRESS_CREATED',
-              description: `Created ${chain} deposit address`,
-              metadata: {
-                chain,
-                address,
-                depositAddressId: depositAddress.id
-              }
-            });
+        // Iterate over OxaPay's supported currencies
+        for (const [currencySymbol, currencyData] of Object.entries(supportedCurrenciesResponse)) {
+          // Skip if currency is not active
+          if (!currencyData.status) {
+            console.log(`Skipping ${currencySymbol} - not active in OxaPay`);
+            continue;
+          }
 
-            console.log(`Created activity log for ${chain} address`);
-          } catch (error) {
-            // TatumError is already logged in the service
-            if (!(error instanceof TatumError)) {
-              console.error(`Failed to create deposit address: ${error.message}`);
+          // Create address for each supported network
+          for (const [networkName, networkData] of Object.entries(currencyData.networkList)) {
+            try {
+              // Create static address with exact currency symbol and network name
+              const addressPromise = oxapay.createStaticAddress({
+                currency: currencySymbol,
+                network: networkName,
+                callbackUrl: process.env.OXAPAY_CALLBACK_URL,
+                description: `${currencySymbol}/${networkName} deposit address for user ${user.id}`,
+                orderId: `${user.id}-${currencySymbol}-${networkName}-${Date.now()}`
+              }).then(async (result) => {
+                if (result.success) {
+                  // Store the exact currency symbol and network name
+                  await DepositAddress.create({
+                    userId: user.id,
+                    currency: currencySymbol,
+                    network: networkName,
+                    address: result.address,
+                    isActive: true,
+                    transactions: []
+                  });
+                  console.log(`Created ${currencySymbol}/${networkName} address successfully`);
+                }
+              }).catch(error => {
+                console.error(`Failed to create ${currencySymbol}/${networkName} address:`, error.message);
+              });
+
+              addressPromises.push(addressPromise);
+            } catch (error) {
+              console.error(`Error creating ${currencySymbol}/${networkName} address:`, error.message);
             }
           }
         }
+
+        // Wait for all addresses to be created
+        await Promise.allSettled(addressPromises);
+
+        // Generate token
+        const accessToken = generateAccessToken(user);
+
+        return {
+          success: true,
+          accessToken,
+          user
+        };
       } catch (error) {
-        console.error('Failed to create deposit addresses:', error);
-        // Don't throw error here, let user register even if address creation fails
+        console.error('Registration error:', error);
+        return {
+          success: false,
+          error: error.message || 'Registration failed'
+        };
       }
-
-      const token = generateAccessToken(user);
-
-      return {
-        success: true,
-        accessToken: token,
-        user
-      };
     },
     login: async (_, { input }) => {
       const { email, password } = input;
@@ -735,6 +943,86 @@ const resolvers = {
       } catch (error) {
         console.error('Error updating email notifications:', error);
         throw new Error('Failed to update email notifications');
+      }
+    },
+    launchGame: async (_, { gameId }, { user }) => {
+      if (!user) throw new AuthenticationError('Not authenticated');
+
+      try {
+        const game = await Game.findById(gameId);
+        if (!game) {
+          throw new Error('Game not found');
+        }
+
+        // Determine which game ID to use based on provider
+        const gameIdentifier = game.provider === 'spingate' ? game.id_hash : game.gameId;
+
+        // Construct base URL for the application
+        const baseUrl = process.env.BASE_URL || 'http://localhost:3000';
+
+        // Format demo player username with demo_ prefix
+        const demoUsername = `demo_${user.username}`;
+        const formattedUsername = `${demoUsername}_USD_${demoUsername}`;
+
+        // First create the demo player
+        const createPlayerResponse = await axios.post(SPINGATE_API_URL, {
+          ...SPINGATE_CONFIG,
+          method: 'createPlayer',
+          user_username: formattedUsername,
+          user_password: formattedUsername,
+          currency: 'USD'
+        });
+
+        console.log('Create Player Response:', createPlayerResponse.data); // Debug log
+
+        // Now launch the game with the demo player credentials
+        const response = await axios.post(SPINGATE_API_URL, {
+          ...SPINGATE_CONFIG,
+          method: 'getGame',
+          user_username: formattedUsername,
+          user_password: formattedUsername,
+          gameid: gameIdentifier,
+          homeurl: `${baseUrl}/dashboard`,
+          cashierurl: `${baseUrl}/dashboard/wallet`,
+          play_for_fun: 0,
+          currency: 'USD',
+          lang: 'en'
+        });
+
+        console.log('Spingate API Response:', response.data); // Debug log
+
+        // Log the activity
+        await ActivityLog.create({
+          userId: user.id,
+          username: user.username,
+          activityType: 'GAME_LAUNCHED',
+          description: `Launched game ${game.name} (${gameIdentifier})`,
+          metadata: { gameId: game.id, provider: game.provider }
+        });
+
+        if (response.data.error !== 0) {
+          return {
+            url: `${baseUrl}/error?message=${encodeURIComponent(response.data.message || 'Failed to launch game')}`,
+            success: false,
+            error: response.data.message || 'Failed to launch game'
+          };
+        }
+
+        // Return the direct game URL from Spingate
+        return {
+          url: response.data.response,
+          success: true,
+          error: null
+        };
+
+      } catch (error) {
+        console.error('Error launching game:', error);
+        const baseUrl = process.env.BASE_URL || 'http://localhost:3000';
+        return {
+          url: `${baseUrl}/error?message=${encodeURIComponent(error.message)}`,
+          success: false,
+          error: error.message
+        };
       }
     }
   }

@@ -24,9 +24,13 @@ import {
   RefreshCw,
   MoreVertical,
   Search,
-  Filter
+  Filter,
+  Copy,
+  ExternalLink
 } from "lucide-react"
 import { gql } from "@apollo/client"
+import { toast } from 'sonner'
+import { getCurrencySymbol } from '@/lib/currency-utils'
 
 const GET_AGENTS = gql`
   query GetAgents {
@@ -82,9 +86,44 @@ const GET_BALANCE = gql`
   }
 `;
 
+const GET_EXCHANGE_RATES = gql`
+  query GetExchangeRates {
+    exchangeRates {
+      EUR
+      TRY
+      GBP
+      BRL
+      AUD
+      CAD
+      NZD
+      TND
+    }
+  }
+`;
+
+const GET_CURRENT_USER = gql`
+  query Me {
+    me {
+      id
+      currency
+    }
+  }
+`;
+
+const convertCurrency = (amount: number, from: string, to: string, rates: any) => {
+  if (from === to) return amount;
+  
+  // Convert to USD first (divide by source currency rate)
+  const amountInUSD = from === 'USD' ? amount : amount / rates[from];
+  
+  // Then convert from USD to target currency (multiply by target currency rate)
+  return to === 'USD' ? amountInUSD : amountInUSD * rates[to];
+};
+
 export default function AccountPage() {
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [showBalanceModal, setShowBalanceModal] = useState(false)
+  const [showCallbackModal, setShowCallbackModal] = useState(false)
   const [selectedAgent, setSelectedAgent] = useState<any>(null)
   const [amount, setAmount] = useState('')
   const [searchTerm, setSearchTerm] = useState('')
@@ -101,11 +140,28 @@ export default function AccountPage() {
     }
   })
 
+  const currencies = [
+    { code: "USD", name: "US Dollar", symbol: "$", flag: "https://flagcdn.com/w40/us.png" },
+    { code: "EUR", name: "Euro", symbol: "€", flag: "https://flagcdn.com/w40/eu.png" },
+    { code: "GBP", name: "British Pound", symbol: "£", flag: "https://flagcdn.com/w40/gb.png" },
+    { code: "BRL", name: "Brazilian Real", symbol: "R$", flag: "https://flagcdn.com/w40/br.png" },
+    { code: "AUD", name: "Australian Dollar", symbol: "AU$", flag: "https://flagcdn.com/w40/au.png" },
+    { code: "CAD", name: "Canadian Dollar", symbol: "CA$", flag: "https://flagcdn.com/w40/ca.png" },
+    { code: "NZD", name: "New Zealand Dollar", symbol: "$", flag: "https://flagcdn.com/w40/nz.png" },
+    { code: "TRY", name: "Turkish Lira", symbol: "₺", flag: "https://flagcdn.com/w40/tr.png" },
+    { code: "TND", name: "Tunisian Dinar", symbol: "DT", flag: "https://flagcdn.com/w40/tn.png" }
+  ];
+
   const { data, loading, refetch } = useQuery(GET_AGENTS)
   const [createAgent] = useMutation(CREATE_AGENT)
   const [updateAgentBalance] = useMutation(UPDATE_AGENT_BALANCE)
   const [toggleAgentStatus] = useMutation(TOGGLE_AGENT_STATUS)
   const { data: balanceData } = useQuery(GET_BALANCE)
+  const { data: exchangeRatesData } = useQuery(GET_EXCHANGE_RATES);
+  const rates = exchangeRatesData?.exchangeRates;
+
+  const { data: userData } = useQuery(GET_CURRENT_USER);
+  const userCurrency = userData?.me?.currency || 'USD';
 
   // Filter agents based on search term and status
   const filteredAgents = data?.getAgents.filter((agent: any) => {
@@ -171,6 +227,63 @@ export default function AccountPage() {
     }
   }
 
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      // API call to update account settings
+      // Replace with your actual API call
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      toast.success('Account settings updated successfully');
+    } catch (error) {
+      console.error('Failed to update account settings:', error);
+      toast.error('Failed to update account settings');
+    }
+  };
+
+  const handleCallbackUrlChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const url = e.target.value;
+    setFormData({...formData, callbackUrl: url});
+    
+    // Basic URL validation
+    if (url && !url.startsWith('http')) {
+      toast.error('Callback URL must start with http:// or https://');
+    }
+  };
+
+  const handleGgrPercentageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = Number(e.target.value);
+    if (value < 0 || value > 100) {
+      toast.error('GGR percentage must be between 0 and 100');
+      return;
+    }
+    setFormData({...formData, ggrPercentage: value});
+  };
+
+  const copyToClipboard = (text: string) => {
+    navigator.clipboard.writeText(text);
+    toast.success('Copied to clipboard!');
+  };
+
+  const renderTotalBalance = (agents: any[]) => {
+    if (!agents || agents.length === 0) return `${getCurrencySymbol(userCurrency)}0.00`;
+    
+    if (!rates) {
+      console.log("Exchange rates not available");
+      return `${getCurrencySymbol(userCurrency)}0.00`;
+    }
+
+    let totalInUserCurrency = 0;
+    
+    agents.forEach(agent => {
+      if (agent.balance) {
+        const amountInUserCurrency = convertCurrency(agent.balance, agent.currency, userCurrency, rates);
+        totalInUserCurrency += amountInUserCurrency;
+      }
+    });
+
+    return `${getCurrencySymbol(userCurrency)}${totalInUserCurrency.toFixed(2)}`;
+  };
+
   return (
     <div className="p-4 sm:p-6 bg-[#F8F9FC]">
       {/* Header */}
@@ -211,7 +324,7 @@ export default function AccountPage() {
           <div className="space-y-0.5">
             <p className="text-xs sm:text-sm text-gray-600">Total Balance</p>
             <p className="text-lg sm:text-xl font-semibold text-gray-900">
-              ${data?.getAgents.reduce((sum: number, agent: any) => sum + agent.balance, 0).toFixed(2) || '0.00'}
+              {renderTotalBalance(data?.getAgents || [])}
             </p>
           </div>
         </div>
@@ -286,10 +399,10 @@ export default function AccountPage() {
 
       {/* Agents Table */}
       <div className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full border-collapse min-w-[1000px]">
-            <thead>
-              <tr className="bg-[#18B69B]/5 border-y border-gray-200">
+        <div className="relative overflow-x-auto">
+          <table className="w-full min-w-[1000px] border-collapse">
+            <thead className="bg-[#18B69B]/5 border-y border-gray-200">
+              <tr>
                 <th className="text-left whitespace-nowrap px-4 py-3 w-[220px]">
                   <div className="flex items-center gap-1.5 text-[11px] font-semibold text-[#18B69B] uppercase">
                     <User className="h-3.5 w-3.5" />
@@ -361,89 +474,118 @@ export default function AccountPage() {
                 </tr>
               ) : (
                 filteredAgents?.map((agent: any) => (
-                  <tr key={agent.id} className="hover:bg-gray-50/50 transition-colors min-h-[64px]">
-                    <td className="px-4 py-3 w-[220px]">
-                      <div className="flex items-center">
-                        <div className="h-8 w-8 flex-shrink-0 rounded-full bg-[#18B69B]/5 flex items-center justify-center">
+                  <tr key={agent.id} className="hover:bg-gray-50/50 transition-colors">
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-3">
+                        <div className="h-8 w-8 rounded-full bg-[#18B69B]/10 flex items-center justify-center">
                           <User className="h-4 w-4 text-[#18B69B]" />
                         </div>
-                        <div className="ml-3">
-                          <div className="text-sm font-medium text-gray-900 truncate max-w-[150px]">{agent.username}</div>
-                          <div className="text-xs text-gray-500">ID: {agent.id}</div>
+                        <div className="flex flex-col">
+                          <span className="text-sm font-medium text-gray-900">{agent.username}</span>
+                          <span className="text-xs text-gray-500">ID: {agent.id}</span>
                         </div>
                       </div>
                     </td>
-                    <td className="px-4 py-3 w-[200px]">
-                      <div className="flex items-center gap-1.5">
-                        <Mail className="h-4 w-4 text-gray-400 flex-shrink-0" />
-                        <span className="text-sm text-gray-600 truncate max-w-[150px]">{agent.email}</span>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2">
+                        <Mail className="h-4 w-4 text-gray-400" />
+                        <span className="text-sm text-gray-600">{agent.email}</span>
                       </div>
                     </td>
-                    <td className="px-4 py-3 w-[100px]">
-                      <div className="flex items-center gap-1.5">
-                        <DollarSign className="h-4 w-4 text-gray-400 flex-shrink-0" />
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2">
+                        <DollarSign className="h-4 w-4 text-gray-400" />
                         <span className="text-sm text-gray-900">{agent.currency}</span>
                       </div>
                     </td>
-                    <td className="px-4 py-3 w-[120px]">
-                      <div className="flex items-center gap-1.5">
-                        <Wallet className="h-4 w-4 text-gray-400 flex-shrink-0" />
-                        <span className="text-sm font-medium text-gray-900">${agent.balance.toFixed(2)}</span>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-medium text-gray-900">
+                          {getCurrencySymbol(agent.currency)}{agent.balance.toFixed(2)}
+                        </span>
                       </div>
                     </td>
-                    <td className="px-4 py-3 w-[100px]">
-                      <div className="flex items-center gap-1.5">
-                        <Percent className="h-4 w-4 text-gray-400 flex-shrink-0" />
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2">
                         <span className="text-sm text-gray-900">{agent.ggrPercentage}%</span>
                       </div>
                     </td>
-                    <td className="px-4 py-3 w-[120px]">
-                      <div className="flex items-center gap-1.5">
-                        <Share2 className="h-4 w-4 text-gray-400 flex-shrink-0" />
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2">
                         <span className="text-sm text-gray-900">{agent.agentSettings.profitShare}%</span>
                       </div>
                     </td>
-                    <td className="px-4 py-3 w-[120px]">
-                      <span className={`inline-flex items-center justify-center w-[90px] h-[26px] gap-1.5 text-xs font-medium rounded-full ${
+                    <td className="px-4 py-3">
+                      <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
                         agent.status === 'active' 
-                          ? 'text-green-700 bg-green-50 border border-green-200' 
-                          : 'text-red-700 bg-red-50 border border-red-200'
+                          ? 'text-green-700 bg-green-50' 
+                          : 'text-red-700 bg-red-50'
                       }`}>
-                        <span className={`h-1.5 w-1.5 rounded-full flex-shrink-0 ${
-                          agent.status === 'active' ? 'bg-green-500' : 'bg-red-500'
-                        }`} />
-                        {agent.status.charAt(0).toUpperCase() + agent.status.slice(1)}
+                        • {agent.status.charAt(0).toUpperCase() + agent.status.slice(1)}
                       </span>
                     </td>
                     <td className="px-4 py-3 w-[120px]">
-                      <div className="flex items-center justify-end gap-2 h-[32px]">
-                        <button
-                          onClick={() => {
-                            setSelectedAgent(agent)
-                            setShowBalanceModal(true)
-                          }}
-                          className="p-1 text-gray-400 hover:text-[#18B69B] hover:bg-[#18B69B]/5 rounded transition-colors"
-                          title="Update Balance"
-                        >
-                          <Wallet className="h-4 w-4" />
-                        </button>
-                        <button
-                          onClick={() => handleToggleStatus(agent)}
-                          className={`p-1 rounded transition-colors ${
-                            agent.status === 'active'
-                              ? 'text-gray-400 hover:text-red-500 hover:bg-red-50'
-                              : 'text-gray-400 hover:text-green-500 hover:bg-green-50'
-                          }`}
-                          title={agent.status === 'active' ? 'Disable Agent' : 'Enable Agent'}
-                        >
-                          <Power className="h-4 w-4" />
-                        </button>
-                        <button
-                          className="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-50 rounded transition-colors"
-                          title="More Options"
-                        >
-                          <MoreVertical className="h-4 w-4" />
-                        </button>
+                      <div className="flex items-center justify-end">
+                        <div className="relative">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (selectedAgent?.id === agent.id) {
+                                setSelectedAgent(null);
+                              } else {
+                                const rect = e.currentTarget.getBoundingClientRect();
+                                const scrollY = window.scrollY || document.documentElement.scrollTop;
+                                setSelectedAgent({
+                                  ...agent,
+                                  dropdownPosition: {
+                                    top: rect.bottom + scrollY,
+                                    left: rect.right - 160,
+                                    width: 160
+                                  }
+                                });
+                              }
+                            }}
+                            className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-50 rounded-lg transition-all duration-200"
+                          >
+                            <MoreVertical className="h-4 w-4" />
+                          </button>
+                          {selectedAgent?.id === agent.id && selectedAgent.dropdownPosition && (
+                            <div 
+                              className="fixed w-40 rounded-lg shadow-lg bg-white ring-1 ring-black ring-opacity-5 z-50"
+                              onClick={(e) => e.stopPropagation()}
+                              style={{
+                                top: `${selectedAgent.dropdownPosition.top}px`,
+                                left: `${selectedAgent.dropdownPosition.left}px`,
+                                width: `${selectedAgent.dropdownPosition.width}px`
+                              }}
+                            >
+                              <div className="py-1" role="menu">
+                                <button
+                                  onClick={() => {
+                                    setShowBalanceModal(true);
+                                    setSelectedAgent(agent);
+                                  }}
+                                  className="flex w-full items-center px-3 py-2 text-sm text-gray-600 hover:bg-[#18B69B]/10 hover:text-[#18B69B] rounded-md transition-all duration-200 group"
+                                  role="menuitem"
+                                >
+                                  <Wallet className="h-4 w-4 mr-2 text-gray-400 group-hover:text-[#18B69B]" />
+                                  Balance
+                                </button>
+                                <button
+                                  onClick={() => {
+                                    setShowCallbackModal(true);
+                                    setSelectedAgent(agent);
+                                  }}
+                                  className="flex w-full items-center px-3 py-2 text-sm text-gray-600 hover:bg-[#18B69B]/10 hover:text-[#18B69B] rounded-md transition-all duration-200 group"
+                                  role="menuitem"
+                                >
+                                  <Link className="h-4 w-4 mr-2 text-gray-400 group-hover:text-[#18B69B]" />
+                                  Details
+                                </button>
+                              </div>
+                            </div>
+                          )}
+                        </div>
                       </div>
                     </td>
                   </tr>
@@ -512,9 +654,9 @@ export default function AccountPage() {
                     onChange={(e) => setFormData({...formData, currency: e.target.value})}
                     className="w-full px-3 py-2 text-sm border border-[#e3e6f0] rounded focus:outline-none focus:border-[#18B69B] focus:shadow-[0_0_0_1px_#18B69B20] transition-all"
                   >
-                    <option value="USD">USD</option>
-                    <option value="EUR">EUR</option>
-                    <option value="TRY">TRY</option>
+                    {currencies.map((currency) => (
+                      <option key={currency.code} value={currency.code}>{currency.name}</option>
+                    ))}
                   </select>
                 </div>
 
@@ -523,7 +665,7 @@ export default function AccountPage() {
                   <input
                     type="url"
                     value={formData.callbackUrl}
-                    onChange={(e) => setFormData({...formData, callbackUrl: e.target.value})}
+                    onChange={handleCallbackUrlChange}
                     className="w-full px-3 py-2 text-sm border border-[#e3e6f0] rounded focus:outline-none focus:border-[#18B69B] focus:shadow-[0_0_0_1px_#18B69B20] transition-all"
                     placeholder="https://"
                   />
@@ -536,10 +678,7 @@ export default function AccountPage() {
                     min="0"
                     max="100"
                     value={formData.ggrPercentage}
-                    onChange={(e) => setFormData({
-                      ...formData,
-                      ggrPercentage: Number(e.target.value)
-                    })}
+                    onChange={handleGgrPercentageChange}
                     className="w-full px-3 py-2 text-sm border border-[#e3e6f0] rounded focus:outline-none focus:border-[#18B69B] focus:shadow-[0_0_0_1px_#18B69B20] transition-all"
                   />
                 </div>
@@ -639,6 +778,66 @@ export default function AccountPage() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Callback URL Modal */}
+      {showCallbackModal && selectedAgent && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-lg w-full max-w-lg mx-4">
+            <div className="p-4 border-b border-gray-200">
+              <div className="flex items-center justify-between">
+                <h3 className="text-lg font-semibold text-gray-900">Callback URL Details</h3>
+                <button
+                  onClick={() => {
+                    setShowCallbackModal(false)
+                    setSelectedAgent(null)
+                  }}
+                  className="text-gray-400 hover:text-gray-500"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+            </div>
+            <div className="p-4">
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Agent Username
+                  </label>
+                  <p className="text-sm text-gray-900">{selectedAgent.username}</p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Callback URL
+                  </label>
+                  <div className="flex items-center gap-2 p-2 bg-gray-50 rounded-md">
+                    <ExternalLink className="h-4 w-4 text-gray-400" />
+                    <p className="text-sm text-gray-900 flex-1 break-all">{selectedAgent.callbackUrl}</p>
+                    <button
+                      onClick={() => copyToClipboard(selectedAgent.callbackUrl)}
+                      className="p-1 hover:bg-gray-200 rounded-md transition-colors"
+                    >
+                      <Copy className="h-4 w-4 text-gray-500" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div className="p-4 border-t border-gray-200">
+              <div className="flex justify-end">
+                <button
+                  onClick={() => {
+                    setShowCallbackModal(false)
+                    setSelectedAgent(null)
+                  }}
+                  className="px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 rounded-md transition-colors"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

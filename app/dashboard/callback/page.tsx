@@ -22,6 +22,7 @@ import {
   AlertCircle,
   Send
 } from "lucide-react"
+import { copyToClipboard } from '@/lib/utils'
 
 interface CallbackLog {
   id: string
@@ -187,7 +188,10 @@ export default function CallbackPage() {
                   <td className="px-4 text-[13px] font-medium text-[#18B69B] whitespace-nowrap">
                     <div className="flex items-center gap-1.5">
                       {log.id}
-                      <button className="group p-1 hover:bg-[#18B69B]/10 rounded transition-colors">
+                      <button 
+                        onClick={() => copyToClipboard(log.id, 'Log ID copied to clipboard!')}
+                        className="group p-1 hover:bg-[#18B69B]/10 rounded transition-colors"
+                      >
                         <Copy className="h-3.5 w-3.5 text-[#858796] group-hover:text-[#18B69B] transition-colors" />
                       </button>
                     </div>
@@ -196,7 +200,10 @@ export default function CallbackPage() {
                     <div className="flex items-center gap-1.5">
                       <Link2 className="h-3.5 w-3.5 text-[#858796]" />
                       {log.url}
-                      <button className="group p-1 hover:bg-[#18B69B]/10 rounded transition-colors">
+                      <button 
+                        onClick={() => copyToClipboard(log.url, 'URL copied to clipboard!')}
+                        className="group p-1 hover:bg-[#18B69B]/10 rounded transition-colors"
+                      >
                         <Copy className="h-3.5 w-3.5 text-[#858796] group-hover:text-[#18B69B] transition-colors" />
                       </button>
                     </div>

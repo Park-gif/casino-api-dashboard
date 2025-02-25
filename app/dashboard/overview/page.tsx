@@ -12,14 +12,69 @@ import {
   Wallet,
   BarChart3
 } from "lucide-react"
+import { getCurrencySymbol } from '@/lib/currency-utils'
+import { gql, useQuery } from "@apollo/client"
+
+const GET_CURRENT_USER = gql`
+  query Me {
+    me {
+      id
+      currency
+    }
+  }
+`;
+
+const GET_BALANCE = gql`
+  query GetBalance {
+    getBalance
+  }
+`;
+
+const GET_EXCHANGE_RATES = gql`
+  query GetExchangeRates {
+    exchangeRates {
+      EUR
+      TRY
+      GBP
+      BRL
+      AUD
+      CAD
+      NZD
+      TND
+    }
+  }
+`;
+
+const convertCurrency = (amount: number, from: string, to: string, rates: any) => {
+  if (from === to) return amount;
+  
+  // Convert to USD first (divide by source currency rate)
+  const amountInUSD = from === 'USD' ? amount : amount / rates[from];
+  
+  // Then convert from USD to target currency (multiply by target currency rate)
+  return to === 'USD' ? amountInUSD : amountInUSD * rates[to];
+};
 
 export default function OverviewPage() {
   const [recentTransactions] = useState([
-    { id: 1, type: "deposit", amount: 1500, status: "completed", date: "2024-01-20 14:30" },
-    { id: 2, type: "withdraw", amount: 500, status: "pending", date: "2024-01-20 13:15" },
-    { id: 3, type: "deposit", amount: 2000, status: "completed", date: "2024-01-20 12:45" },
-    { id: 4, type: "withdraw", amount: 750, status: "completed", date: "2024-01-20 11:20" },
+    { id: 1, type: "deposit", amount: 1500, currency: "USD", status: "completed", date: "2024-01-20 14:30" },
+    { id: 2, type: "withdraw", amount: 500, currency: "EUR", status: "pending", date: "2024-01-20 13:15" },
+    { id: 3, type: "deposit", amount: 2000, currency: "TRY", status: "completed", date: "2024-01-20 12:45" },
+    { id: 4, type: "withdraw", amount: 750, currency: "USD", status: "completed", date: "2024-01-20 11:20" },
   ])
+
+  const { data: userData } = useQuery(GET_CURRENT_USER);
+  const { data: balanceData } = useQuery(GET_BALANCE);
+  const { data: exchangeRatesData } = useQuery(GET_EXCHANGE_RATES);
+  
+  const userCurrency = userData?.me?.currency || 'USD';
+  const currencySymbol = getCurrencySymbol(userCurrency);
+  const rates = exchangeRatesData?.exchangeRates;
+
+  const convertAmount = (amount: number, fromCurrency: string) => {
+    if (!rates) return amount;
+    return convertCurrency(amount, fromCurrency, userCurrency, rates);
+  };
 
   return (
     <div className="min-h-screen bg-[#F8F9FC] p-4 md:p-6">
@@ -48,7 +103,9 @@ export default function OverviewPage() {
             </div>
             <p className="text-sm text-gray-600 mb-1">Total Balance</p>
             <div className="flex items-center gap-2">
-              <h3 className="text-2xl font-semibold text-[#2D3359]">$24,500</h3>
+              <h3 className="text-2xl font-semibold text-[#2D3359]">
+                {currencySymbol}{balanceData?.getBalance.toFixed(2) || '0.00'}
+              </h3>
               <span className="text-xs text-green-500 flex items-center">
                 <ArrowUpRight className="h-3 w-3" />
                 8.2%
@@ -82,7 +139,7 @@ export default function OverviewPage() {
             </div>
             <p className="text-sm text-gray-600 mb-1">Total Deposits</p>
             <div className="flex items-center gap-2">
-              <h3 className="text-2xl font-semibold text-[#2D3359]">$18,400</h3>
+              <h3 className="text-2xl font-semibold text-[#2D3359]">{currencySymbol}18,400</h3>
               <span className="text-xs text-red-500 flex items-center">
                 <ArrowDownRight className="h-3 w-3" />
                 3.2%
@@ -99,7 +156,7 @@ export default function OverviewPage() {
             </div>
             <p className="text-sm text-gray-600 mb-1">Total Revenue</p>
             <div className="flex items-center gap-2">
-              <h3 className="text-2xl font-semibold text-[#2D3359]">$32,800</h3>
+              <h3 className="text-2xl font-semibold text-[#2D3359]">{currencySymbol}32,800</h3>
               <span className="text-xs text-green-500 flex items-center">
                 <ArrowUpRight className="h-3 w-3" />
                 15.3%
@@ -119,39 +176,36 @@ export default function OverviewPage() {
               </button>
             </div>
           </div>
-          <div className="divide-y">
+          <div className="divide-y divide-gray-100">
             {recentTransactions.map((transaction) => (
-              <div key={transaction.id} className="p-4 hover:bg-gray-50">
+              <div key={transaction.id} className="p-4 hover:bg-gray-50/50">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
-                    <div className={`h-10 w-10 rounded-lg ${
+                    <div className={`h-8 w-8 rounded-full flex items-center justify-center ${
                       transaction.type === "deposit" 
-                        ? "bg-green-500/10" 
-                        : "bg-red-500/10"
-                    } flex items-center justify-center`}>
+                        ? "bg-green-50" 
+                        : "bg-red-50"
+                    }`}>
                       {transaction.type === "deposit" ? (
-                        <ArrowDownRight className="h-5 w-5 text-green-500" />
+                        <ArrowUpRight className={`h-4 w-4 text-green-500`} />
                       ) : (
-                        <ArrowUpRight className="h-5 w-5 text-red-500" />
+                        <ArrowDownRight className={`h-4 w-4 text-red-500`} />
                       )}
                     </div>
                     <div>
-                      <p className="font-medium text-[#2D3359] capitalize">
-                        {transaction.type}
-                      </p>
-                      <p className="text-sm text-gray-500 flex items-center gap-1">
-                        <Clock className="h-3.5 w-3.5" />
-                        {transaction.date}
-                      </p>
+                      <p className="text-sm font-medium text-gray-900 capitalize">{transaction.type}</p>
+                      <p className="text-xs text-gray-500">{transaction.date}</p>
                     </div>
                   </div>
                   <div className="text-right">
-                    <p className={`font-medium ${
+                    <p className={`text-sm font-medium ${
                       transaction.type === "deposit" 
-                        ? "text-green-500" 
-                        : "text-red-500"
+                        ? "text-green-600" 
+                        : "text-red-600"
                     }`}>
-                      {transaction.type === "deposit" ? "+" : "-"}${transaction.amount}
+                      {transaction.type === "deposit" ? "+" : "-"}
+                      {currencySymbol}
+                      {convertAmount(transaction.amount, transaction.currency).toFixed(2)}
                     </p>
                     <p className="text-sm text-gray-500 capitalize">{transaction.status}</p>
                   </div>

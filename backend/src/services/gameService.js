@@ -1,4 +1,6 @@
 const axios = require('axios');
+const fs = require('fs').promises;
+const path = require('path');
 const Game = require('../models/Game');
 
 const TBS2_API_URL = 'https://tbs2api.lvslot.net/API/';
@@ -13,6 +15,80 @@ const SPINGATE_CONFIG = {
     api_login: '0047cd0d-5a40-48a9-a6bc-cb8a615f0690-578867',
     api_password: 'tfonhVGglLFJ'
 };
+
+const GAMES_FILE_PATH = path.join(__dirname, '../data/games.json');
+const UPDATE_INTERVAL = 24 * 60 * 60 * 1000; // 24 hours in milliseconds
+
+let isInitialFetchDone = false;
+
+async function shouldUpdateGames() {
+  try {
+    if (isInitialFetchDone) {
+      const lastGame = await Game.findOne().sort({ updatedAt: -1 });
+      if (!lastGame) return true;
+      const timeSinceLastUpdate = Date.now() - lastGame.updatedAt.getTime();
+      return timeSinceLastUpdate >= UPDATE_INTERVAL;
+    }
+
+    const gamesCount = await Game.countDocuments();
+    if (gamesCount === 0) return true;
+
+    const lastGame = await Game.findOne().sort({ updatedAt: -1 });
+    if (!lastGame) return true;
+
+    const timeSinceLastUpdate = Date.now() - lastGame.updatedAt.getTime();
+    return timeSinceLastUpdate >= UPDATE_INTERVAL;
+  } catch (error) {
+    return false;
+  }
+}
+
+async function fetchAndSaveGames(silent = true) {
+  try {
+    const shouldUpdate = await shouldUpdateGames();
+    if (!shouldUpdate) return;
+
+    // Fetch games from both providers
+    const [tbs2Games, spingateGames] = await Promise.all([
+      fetchTBS2Games(),
+      fetchSpingateGames()
+    ]);
+
+    const allGames = [...tbs2Games, ...spingateGames];
+
+    // Save to games.json for caching
+    await fs.writeFile(GAMES_FILE_PATH, JSON.stringify({ games: allGames }, null, 2), { flag: 'w' });
+
+    // Prepare bulk operations
+    const operations = allGames.map(game => ({
+      updateOne: {
+        filter: { provider: game.provider, gameId: game.gameId },
+        update: { 
+          $set: {
+            ...game,
+            updatedAt: new Date()
+          }
+        },
+        upsert: true
+      }
+    }));
+
+    if (operations.length > 0) {
+      await Game.bulkWrite(operations, { ordered: false });
+    }
+
+    isInitialFetchDone = true;
+
+    if (!silent) {
+      console.log(`Successfully updated ${operations.length} games`);
+    }
+  } catch (error) {
+    console.error('Error updating games:', error);
+    if (!silent) {
+      console.error('Game update failed:', error.message);
+    }
+  }
+}
 
 async function fetchTBS2Games() {
     try {
@@ -44,10 +120,9 @@ async function fetchTBS2Games() {
                     category: provider,
                     provider_name: game.title || provider,
                     image: game.img || '',
-                    mobile: game.device === '2', // device: 2 means mobile compatible
+                    mobile: game.device === '2',
                     status: 'active',
                     last_updated: new Date(),
-                    // Additional TBS2-specific fields
                     demo: game.demo === '1',
                     exitButton: game.exitButton === '1',
                     rewriterule: game.rewriterule === '1',
@@ -56,11 +131,9 @@ async function fetchTBS2Games() {
                 games.push(...providerGames);
             }
         }
-
         return games;
     } catch (error) {
-        console.error('Error fetching TBS2 games:', error.message);
-        throw error;
+        return [];
     }
 }
 
@@ -75,16 +148,8 @@ async function fetchSpingateGames() {
             currency: 'USD'
         });
 
-        // Debug logging
-        console.log('Spingate Response Type:', typeof response.data);
-        console.log('Response Keys:', Object.keys(response.data));
-        
-        // Check if response exists
-        if (!response.data) {
-            throw new Error('Invalid Spingate response: No data received');
-        }
+        if (!response.data) return [];
 
-        // Check if response.data.response exists (common API pattern)
         if (response.data.response && typeof response.data.response === 'object') {
             const gamesList = Object.entries(response.data.response)
                 .filter(([key, game]) => 
@@ -95,10 +160,8 @@ async function fetchSpingateGames() {
                     game.name
                 )
                 .map(([_, game]) => game);
-
-            console.log('Found Spingate games in response:', gamesList.length);
             
-            const games = gamesList.map(game => ({
+            return gamesList.map(game => ({
                 provider: 'spingate',
                 gameId: game.id.toString(),
                 name: game.name,
@@ -120,80 +183,25 @@ async function fetchSpingateGames() {
                 status: 'active',
                 last_updated: new Date()
             }));
-
-            return games;
         }
-
-        console.error('Unexpected Spingate response structure:', 
-            JSON.stringify(response.data, null, 2).substring(0, 1000) + '...');
         return [];
-
     } catch (error) {
-        console.error('Error fetching Spingate games:', error.message);
-        if (error.response) {
-            console.error('API Error Response:', error.response.data);
-        }
-        return []; // Return empty array instead of throwing
+        return [];
     }
 }
 
-async function updateGames() {
-    try {
-        console.log('Starting game list update check...');
-
-        // Check when games were last updated
-        const lastUpdatedGame = await Game.findOne().sort({ last_updated: -1 });
-        const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
-
-        if (lastUpdatedGame && lastUpdatedGame.last_updated > oneDayAgo) {
-            console.log('Games were updated less than 24 hours ago. Next update scheduled for:', 
-                new Date(lastUpdatedGame.last_updated.getTime() + 24 * 60 * 60 * 1000));
-            return;
-        }
-        
-        // Fetch games from both providers
-        const [tbs2Games, spingateGames] = await Promise.all([
-            fetchTBS2Games(),
-            fetchSpingateGames()
-        ]);
-
-        const allGames = [...tbs2Games, ...spingateGames];
-        const updateTime = new Date();
-
-        // Update or insert games
-        for (const game of allGames) {
-            game.last_updated = updateTime; // Use same timestamp for all games in this update
-            await Game.findOneAndUpdate(
-                { provider: game.provider, gameId: game.gameId },
-                game,
-                { upsert: true, new: true }
-            );
-        }
-
-        console.log(`Successfully updated games. Total: ${allGames.length}`);
-        console.log(`TBS2: ${tbs2Games.length}, Spingate: ${spingateGames.length}`);
-        console.log('Next update scheduled for:', new Date(updateTime.getTime() + 24 * 60 * 60 * 1000));
-
-    } catch (error) {
-        console.error('Error updating games:', error);
-        throw error;
-    }
-}
-
-// Function to start daily updates
-function startDailyUpdates() {
-    // Update immediately on start if needed
-    updateGames().catch(console.error);
-
-    // Schedule daily updates
-    setInterval(() => {
-        updateGames().catch(console.error);
-    }, 6 * 60 * 60 * 1000); // Check every 6 hours, but update only if 24 hours have passed
+async function startDailyUpdates() {
+  try {
+    await fetchAndSaveGames(true);
+    setInterval(() => fetchAndSaveGames(true), UPDATE_INTERVAL);
+  } catch (error) {
+    // Silent fail
+  }
 }
 
 module.exports = {
-    updateGames,
-    startDailyUpdates,
-    fetchTBS2Games,
-    fetchSpingateGames
+  fetchAndSaveGames,
+  startDailyUpdates,
+  fetchTBS2Games,
+  fetchSpingateGames
 }; 

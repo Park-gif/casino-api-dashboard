@@ -3,6 +3,11 @@ const { gql } = require('apollo-server-express');
 const typeDefs = gql`
   scalar JSON
 
+  enum SortDirection {
+    asc
+    desc
+  }
+
   type BillingCycle {
     current: Float!
     limit: Float!
@@ -12,15 +17,13 @@ const typeDefs = gql`
   type DepositAddress {
     id: ID!
     userId: ID!
-    chain: String!
+    currency: String!
+    network: String!
     address: String!
-    memo: String
-    balance: Float!
     isActive: Boolean!
     transactions: [Transaction!]!
-    lastChecked: String!
     createdAt: String!
-    updatedAt: String!
+    updatedAt: String
   }
 
   type Transaction {
@@ -55,6 +58,7 @@ const typeDefs = gql`
     lastLogin: String
     createdAt: String!
     updatedAt: String!
+    players: [Player!]
   }
 
   type AgentSettings {
@@ -114,6 +118,7 @@ const typeDefs = gql`
     username: String!
     email: String!
     password: String!
+    currency: String!
   }
 
   input LoginInput {
@@ -276,6 +281,70 @@ const typeDefs = gql`
     maxAmount: Float
   }
 
+  type Player {
+    id: ID!
+    username: String!
+    formattedUsername: String!
+    currency: String!
+    createdAt: String!
+    lastLogin: String
+    status: String!
+    totalBets: Float
+    totalWins: Float
+  }
+
+  type PlayersResponse {
+    players: [Player!]!
+    totalCount: Int!
+    hasNextPage: Boolean!
+  }
+
+  input PlayerFilters {
+    search: String
+    status: String
+    dateFrom: String
+    dateTo: String
+    orderBy: String
+    orderDirection: SortDirection
+  }
+
+  type SlotTransaction {
+    id: ID!
+    playerId: ID!
+    username: String!
+    formattedUsername: String!
+    operator: String!
+    roundId: String!
+    gameId: String!
+    type: String!
+    credit: Float
+    debit: Float
+    currency: String!
+    callId: String!
+    sessionId: String!
+    gameplayFinal: Boolean!
+    status: String!
+    metadata: SlotTransactionMetadata!
+    createdAt: String!
+    updatedAt: String!
+  }
+
+  type SlotTransactionMetadata {
+    timestamp: String!
+    balanceBefore: Float!
+    balanceAfter: Float!
+  }
+
+  input TransactionFilter {
+    username: String
+    formattedUsername: String
+    gameId: String
+    roundId: String
+    type: String
+    startDate: String
+    endDate: String
+  }
+
   type Query {
     me: User
     getApiKeys: [ApiKey!]!
@@ -288,14 +357,32 @@ const typeDefs = gql`
     getAgent(id: ID!): User
     getSubAgents: [User!]!
     getActivityLogs(limit: Int, offset: Int): [ActivityLog!]!
-    games(filters: GameFilters, page: Int, limit: Int): GamesResponse!
+    games(filters: GameFilters, limit: Int, page: Int): GamesResponse!
     game(id: ID!): Game
     gamesByProvider(provider: String!): [Game!]!
     gameCategories: [String!]!
-    getMerchantDeposits(filters: MerchantDepositFilters, first: Int, after: ID): MerchantDepositConnection!
+    getMerchantDeposits(filters: MerchantDepositFilters): [MerchantDeposit!]!
     getMerchantDeposit(id: ID!): MerchantDeposit
-    getDepositAddresses(userId: ID!): [DepositAddress!]!
+    getDepositAddresses: [DepositAddress!]!
     getDepositAddress(userId: ID!, chain: String!): DepositAddress
+    players(filters: PlayerFilters, first: Int!, after: String): PlayersResponse!
+    exchangeRates: ExchangeRates
+    slotTransactions(
+      filter: TransactionFilter
+      page: Int = 1
+      limit: Int = 10
+    ): SlotTransactionResponse!
+  }
+
+  type ExchangeRates {
+    EUR: Float
+    GBP: Float
+    BRL: Float
+    TRY: Float
+    TND: Float
+    AUD: Float
+    CAD: Float
+    NZD: Float
   }
 
   type Mutation {
@@ -322,6 +409,27 @@ const typeDefs = gql`
     ): ActivityLog!
     updateUserCallbackUrl(url: String!): User!
     updateEmailNotifications(enabled: Boolean!): User!
+    launchGame(gameId: ID!): LaunchGameResponse!
+  }
+
+  type LaunchGameResponse {
+    url: String!
+    success: Boolean!
+    error: String
+  }
+
+  type RegisterResponse {
+    success: Boolean!
+    error: String
+    accessToken: String
+    user: User
+  }
+
+  type SlotTransactionResponse {
+    transactions: [SlotTransaction!]!
+    totalCount: Int!
+    currentPage: Int!
+    totalPages: Int!
   }
 `;
 

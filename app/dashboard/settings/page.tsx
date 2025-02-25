@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { Bell, Lock, Shield, User, Mail, LinkIcon, Globe, Check } from "lucide-react"
 import { useQuery, useMutation } from '@apollo/client'
 import { gql } from '@apollo/client'
+import { toast } from 'sonner'
 
 const GET_USER_SETTINGS = gql`
   query GetUserSettings {
@@ -60,6 +61,7 @@ export default function SettingsPage() {
       console.log('Mutation completed with data:', data);
       if (data?.updateUserCallbackUrl?.callbackUrl !== undefined) {
         setCallbackUrl(data.updateUserCallbackUrl.callbackUrl);
+        toast.success('Callback URL updated successfully');
       }
       setIsEditing(false);
       setSaveError('');
@@ -67,6 +69,7 @@ export default function SettingsPage() {
     },
     onError: (error) => {
       setSaveError(error.message);
+      toast.error('Failed to update callback URL');
       console.error('Update error:', error);
     }
   });
@@ -74,9 +77,11 @@ export default function SettingsPage() {
   const [updateEmailNotifications] = useMutation(UPDATE_EMAIL_NOTIFICATIONS, {
     onCompleted: (data) => {
       console.log('Email notifications updated:', data);
+      toast.success('Email notification settings updated');
     },
     onError: (error) => {
       console.error('Error updating email notifications:', error);
+      toast.error('Failed to update email notifications');
     }
   });
 
@@ -88,12 +93,14 @@ export default function SettingsPage() {
       setEmailNotifications(enabled);
     } catch (error) {
       console.error('Failed to update email notifications:', error);
+      toast.error('Failed to update email notifications');
     }
   };
 
   const handleSaveCallback = async () => {
     if (!callbackUrl) {
       setSaveError('Please enter a valid URL');
+      toast.error('Please enter a valid URL');
       return;
     }
 
@@ -107,6 +114,7 @@ export default function SettingsPage() {
     } catch (error) {
       console.error('Error updating callback URL:', error);
       setSaveError('Failed to update callback URL');
+      toast.error('Failed to update callback URL');
     } finally {
       setIsSaving(false);
     }

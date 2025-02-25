@@ -2,9 +2,22 @@
 
 import { useState } from "react"
 import Link from "next/link"
-import { Mail, Lock, User } from "lucide-react"
+import Image from "next/image"
+import { Mail, Lock, User, DollarSign, ChevronDown } from "lucide-react"
 import { useAuth } from "@/lib/auth-context"
 import { LoadingSpinner, LoadingOverlay } from "@/components/ui/loading"
+
+const currencies = [
+  { code: "USD", name: "US Dollar", symbol: "$", flag: "https://flagcdn.com/w40/us.png" },
+  { code: "EUR", name: "Euro", symbol: "€", flag: "https://flagcdn.com/w40/eu.png" },
+  { code: "GBP", name: "British Pound", symbol: "£", flag: "https://flagcdn.com/w40/gb.png" },
+  { code: "BRL", name: "Brazilian Real", symbol: "R$", flag: "https://flagcdn.com/w40/br.png" },
+  { code: "AUD", name: "Australian Dollar", symbol: "AU$", flag: "https://flagcdn.com/w40/au.png" },
+  { code: "CAD", name: "Canadian Dollar", symbol: "CA$", flag: "https://flagcdn.com/w40/ca.png" },
+  { code: "NZD", name: "New Zealand Dollar", symbol: "$", flag: "https://flagcdn.com/w40/nz.png" },
+  { code: "TRY", name: "Turkish Lira", symbol: "₺", flag: "https://flagcdn.com/w40/tr.png" },
+  { code: "TND", name: "Tunisian Dinar", symbol: "DT", flag: "https://flagcdn.com/w40/tn.png" },
+]
 
 export default function RegisterPage() {
   const { register } = useAuth()
@@ -15,8 +28,12 @@ export default function RegisterPage() {
     email: "",
     password: "",
     confirmPassword: "",
+    currency: "USD", // Default currency
     rememberMe: true,
+    showCurrencyDropdown: false,
   })
+
+  const selectedCurrency = currencies.find(c => c.code === formData.currency) || currencies[0]
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -37,7 +54,7 @@ export default function RegisterPage() {
     }
 
     try {
-      await register(formData.username, formData.email, formData.password, formData.rememberMe)
+      await register(formData.username, formData.email, formData.password, formData.currency, formData.rememberMe)
       // No need to redirect here as it's handled in the auth context
     } catch (err: any) {
       setError(err.message || "Registration failed")
@@ -98,6 +115,68 @@ export default function RegisterPage() {
                   placeholder="Enter your email"
                   disabled={loading}
                 />
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-gray-700">Currency</label>
+              <div className="relative">
+                <div className="relative">
+                  <button
+                    type="button"
+                    className="w-full h-11 pl-3 pr-10 rounded-lg border border-gray-200 focus:outline-none focus:border-[#18B69B]/30 bg-white flex items-center justify-between"
+                    onClick={() => setFormData({ ...formData, showCurrencyDropdown: !formData.showCurrencyDropdown })}
+                    disabled={loading}
+                  >
+                    <div className="flex items-center gap-2">
+                      <Image
+                        src={selectedCurrency.flag}
+                        alt={selectedCurrency.code}
+                        width={24}
+                        height={16}
+                        className="rounded"
+                      />
+                      <span className="text-sm font-medium">{selectedCurrency.code}</span>
+                      <span className="text-gray-500">-</span>
+                      <span className="text-sm text-gray-600">{selectedCurrency.name}</span>
+                      <span className="text-sm text-gray-500">({selectedCurrency.symbol})</span>
+                    </div>
+                    <ChevronDown className="h-5 w-5 text-gray-400" />
+                  </button>
+
+                  {formData.showCurrencyDropdown && (
+                    <div className="absolute z-10 mt-1 w-full bg-white rounded-lg border border-gray-200 shadow-lg">
+                      <div className="max-h-60 overflow-auto py-1">
+                        {currencies.map((currency) => (
+                          <button
+                            key={currency.code}
+                            type="button"
+                            className="w-full px-3 py-2 text-left hover:bg-gray-50 flex items-center gap-2"
+                            onClick={() => {
+                              setFormData({
+                                ...formData,
+                                currency: currency.code,
+                                showCurrencyDropdown: false
+                              })
+                            }}
+                          >
+                            <Image
+                              src={currency.flag}
+                              alt={currency.code}
+                              width={24}
+                              height={16}
+                              className="rounded"
+                            />
+                            <span className="text-sm font-medium">{currency.code}</span>
+                            <span className="text-gray-500">-</span>
+                            <span className="text-sm text-gray-600">{currency.name}</span>
+                            <span className="text-sm text-gray-500">({currency.symbol})</span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
 
