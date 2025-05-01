@@ -2,15 +2,16 @@
 
 A modern, feature-rich dashboard for game providers built with Next.js, TypeScript, and Tailwind CSS.
 
-Demo: https://moonshoot.fun/
+Demo: https://jest.bet/
 ## 💎 API Access
 
 For API key access and integration support:
-- Monthly subscription: $250
+- 12% GGR 
 - Contact: [@blancos13](https://t.me/blancos13) on Telegram
 - Full access to all providers and features
 - 24/7 technical support
 - Regular updates and new provider integrations
+
 
 ## Features
 ![image](https://github.com/user-attachments/assets/fd6d06e2-0431-43ae-b737-464a295049d0)
