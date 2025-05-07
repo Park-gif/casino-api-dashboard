@@ -3,6 +3,7 @@
 A modern, feature-rich dashboard for game providers built with Next.js, TypeScript, and Tailwind CSS.
 
 Demo: https://jest.bet/
+DOCS https://jest.bet/docs
 ## 💎 API Access
 
 For API key access and integration support:
